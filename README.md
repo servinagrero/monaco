@@ -51,9 +51,11 @@ width normalvariate 50 3
 
 > The name of the functions has to be the same as the functions contained in the random module.
 
-The files used as template are executed using python's `string.Template.safe_execute()`.
+Moreover, custom functions can be added by updating the dict `CUSTOM_FUNCTIONS` where the key is the name of the function and the value is the function itself.
 
-If the file `<project>/name.ocn` exists, ocean is used to run the simulation. This file is also executed as a template and written to `<project>/simulation.ocn`. If the file is not found,  the file `cmdsimulation` (case insensitive) is read and it's contents are used to execute each simulation.
+The files used as template are executed using python's `string.Template.safe_substitute()`.
+
+If the file `<project>/name.ocn` exists, ocean is used to run the simulation. This file is also executed as a template and written to `<project>/simulation.ocn`. If the file is not found, the file `cmdsimulation` (case insensitive) is read and it's contents are used to execute each simulation.
 
 This functions allow the use of a user defined callback that is executed after every simulation.
 The callback has the following signature:

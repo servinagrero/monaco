@@ -34,10 +34,18 @@ name function arg1 arg2 ... argN
 temp uniform 20 30
 
 The name of the functions have to be the same as the ones found in the random module.
+Custom functions can be added by updating the `CUSTOM_FUNCTIONS` dictionary.
 
 After every simulation, a custom callback function can be executed.
 The signature of the fuction is `callback_fn(props, *args, **kwargs)`.
 """
+
+
+# Dispatch table for custom functions
+# A user can add a custom function in their code by updating the dictionary
+CUSTOM_FUNCTIONS = {
+    "span%": lambda mu, span: random.uniform(mu - (mu * span), mu + (mu * span))
+}
 
 
 def find_file_ext(name: str, files: List[str]) -> Union[str, None]:
@@ -72,13 +80,16 @@ def generate_parameters(params_def: Dict) -> Dict:
     Returns:
       Names and values of the parameters.
     """
+    global CUSTOM_FUNCTIONS
     params = {}
 
     for param, info in params_def.items():
-        if info["function"] == "span%":
-            fn = lambda mu, span: random.uniform(mu - (mu * span), mu + (mu * span))
-        else:
-            fn = getattr(random, info["function"])
+        fn = CUSTOM_FUNCTIONS.get(info["function"], None)
+        if not fn:
+            fn = getattr(random, info["function"], None)
+            if not fn:
+                raise ValueError(f"Function {info['function']} does not exist")
+
         params[param] = fn(*info["values"])
 
     return params
@@ -246,6 +257,8 @@ def mc_simulations(
         props["params"] = generate_parameters(params_def)
 
         run_simulation(props)
+
+        # TODO: Allow passing a callback for every project
         if callback_fn:
             callback_fn(props, *args, **kwargs)
 
