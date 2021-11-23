@@ -3,6 +3,10 @@
 <h3 align='center'>Python aided Monte Carlo and Parametric simulations in Cadence
 </h3>
 
+# TODO
+
+Convert this framework to a group of functions to ease automation of testing with cadence.
+
 # Introduction
 
 This script provides functionaly to perform MC and Parametric simulations using Cadence.
