@@ -43,7 +43,7 @@ CUSTOM_FUNCTIONS = {
 }
 """
 
-PathStr = Union[str, PathLike[str]]
+PathStr = Union[str, PathLike]
 ParamDef = Dict[str, Dict[str, Union[List[str], List[float]]]]
 Param = Dict[str, Union[float, str]]
 
@@ -182,7 +182,7 @@ def template_subs(raw: Union[Template, str], subs: Param) -> str:
         template = Template(raw)
     else:
         template = raw
-        
+
     return template.safe_substitute(subs)
 
 
@@ -269,12 +269,23 @@ class SimBuilder:
         txt = (
             f"Project Path: {self.project_path}\n"
             f"Results path: {self.results_path}\n"
-            f"Netlist: {self.__netlist}\n"
             f"Parametric: {self.__is_parametric}\n"
-            f"Has sweeps: {self.__is_sweeps}"
+            f"Has sweeps: {self.__is_sweeps}\n"
+            f"Netlist Input: {self.__netlist}\n"
+            f"Netlist Output: {self.__netlist_out}"
         )
         if self.__is_ocean:
-            txt = f"{txt}" f"Ocean script: {self.__ocean_script}\n"
+            txt = (
+                f"{txt}\n"
+                f"Ocean Input: {self.__ocean_script}\n"
+                f"Ocean Output: {self.__ocean_out}"
+            )
+
+        if self.is_verbose:
+            txt = (
+                f"{txt}\n"
+                f'Command: {self.__cmd}'
+            )
 
         return txt
 
@@ -324,9 +335,12 @@ class SimBuilder:
         self.__params_def = {}
         self.__sweeps_def = {}
 
-    def with_props(self, props: Dict[str, Any]) -> None:
+    def with_props(self, props: Dict[str, Any], reset: bool = True) -> None:
         """ """
-        self.__props = props
+        if reset is True:
+            self.__props = props
+        else:
+            self.__props.update(props)
 
     def with_netlist(self, netlist_path: Path) -> None:
         """Set the netlist to use
@@ -449,7 +463,7 @@ class SimBuilder:
                 raise ValueError(f"Ocean script {ocean_script} does not exist.")
 
         self.__ocean_out = Path(self.project_path, f"ocn_{self.project_name}")
-        self.__cmd = f"ocean -nograph < {self.__ocean_script}"
+        self.__cmd = f"sh -c 'ocean -nograph < {self.__ocean_out}'"
 
     def run_iterations(self, iterations: int) -> Generator:
         """
