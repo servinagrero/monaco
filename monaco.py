@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
 
-import shlex
 import argparse
 import json
 import random
-import numpy as np
+import shlex
+from os import PathLike
 from datetime import datetime
 from pathlib import Path
 from string import Template
 from subprocess import DEVNULL, run
 from threading import Thread
-from typing import Callable, Dict, Union, List, Generator
+from typing import Callable, Dict, Generator, List, Tuple, Union, Any, Mapping
+
+import numpy as np
 
 __version__ = "0.1.0"
 __author__ = "Sergio Vinagrero <servinagrero@gmail.com>"
@@ -41,45 +43,45 @@ CUSTOM_FUNCTIONS = {
 }
 """
 
-Dir = Union[str, Path]
-ParamDef = Dict[str, Union[List[float], List[str]]]
+PathStr = Union[str, PathLike[str]]
+ParamDef = Dict[str, Dict[str, Union[List[str], List[float]]]]
 Param = Dict[str, Union[float, str]]
 
 
-def files_find_ext(ext: str, dir: Dir) -> List[Path]:
+def files_find_ext(ext: str, dir: PathStr) -> List[Path]:
     """List files in a directory with that match a extension.
 
     Args:
-        ext (str): Extension of the file to be found.
-        dir (Dir): Directory to look for files
+        ext: Extension of the file to be found.
+        dir: Directory to look for files.
 
     Yields:
-        List of files in the directory
+        List of files in the directory.
     """
     return list(Path(dir).resolve().glob(r"*." + ext))
 
 
-def files_list(dir: Dir, *args, **kwargs) -> List[Path]:
-    """List all regular files in a directory
+def files_list(dir: PathStr, *args, **kwargs) -> List[Path]:
+    """List all regular files in a directory.
 
     Args:
-        dir (Dir): Directory to look for files
+        dir: Directory to look for files.
 
     Returns:
-        List[Path]: List of files in the directory
+        List of files in the directory.
     """
     return [p for p in Path(dir).iterdir(*args, **kwargs) if p.is_file()]
 
 
 def files_filter_ext(files: List[Path], ext: str) -> List[Path]:
-    """Filter files from a list matching a extension
+    """Filter files from a list matching a extension.
 
     Args:
-        files (List[Path]): List of files
-        ext (str): Extension to filter
+        files: List of files.
+        ext: Extension to filter.
 
     Returns:
-        List[Path]: List of files that have the extension
+        List of files that have the extension.
     """
     return [f for f in files if f.suffix == ext]
 
@@ -88,21 +90,21 @@ def params_generate(params_def: ParamDef, custom_fns: Dict[str, Callable]) -> Pa
     """Generate the random params.
 
     Args:
-        params_def (ParamDef): Definition of the parameters.
+        params_def: Definition of the parameters.
 
     Returns:
-        ParamDef: Names and values of the parameters.s
+        ParamDef: Names and values of the parameters.
 
     Raises:
       OSError: The parameters file cannot be opened.
       AttributeError: The name of the function is not found.
     """
-    custom_fns = custom_fns if custom_fns else {}
-    params = {}
+    functions: Dict[str, Callable] = custom_fns if custom_fns else {}
+    params: Param = {}
 
     for param, info in params_def.items():
         fns = []
-        fns.append(custom_fns.get(info["function"], None))
+        fns.append(functions.get(info["function"], None))
         fns.append(getattr(np.random, info["function"], None))
         fns.append(getattr(random, info["function"], None))
         if not any(fns):
@@ -114,7 +116,7 @@ def params_generate(params_def: ParamDef, custom_fns: Dict[str, Callable]) -> Pa
     return params
 
 
-def params_parse(params_file: Path) -> ParamDef:
+def params_parse(params_file: PathStr) -> ParamDef:
     """Extract parameter definitions from a file.
 
     The parameters are read from the file in the following way:
@@ -130,7 +132,7 @@ def params_parse(params_file: Path) -> ParamDef:
     The argumens are given in a list separated by spaces.
 
     Args:
-        params_file (Path): Path to the parameter definition file.
+        params_file: Path to the parameter definition file.
 
     Raises:
       OSError: The parameters file cannot be opened.
@@ -160,69 +162,70 @@ def params_parse(params_file: Path) -> ParamDef:
     return data
 
 
-def params_parse(sweeps_file: Path) -> ParamDef:
-    raise NotImplementedError
-
-
 def sweeps_generate(sweeps_def: ParamDef, custom_fns: Dict[str, Callable]) -> Param:
     raise NotImplementedError
 
 
-def template_subs(raw: Union[Template, str], *args: List[Param]) -> str:
+def template_subs(raw: Union[Template, str], subs: Param) -> str:
     """Substitute a template with a list of arguments.
 
     If the argument is a string it gets converted into a Template.
 
     Args:
-        raw (Union[Template, str]): Template to substitute
-        args (List[ParamDef]): List of parameter definitions
+        raw: Text to be substituted. Converted automatically to Template if needed
+        *args: List of parameter definitions.
 
     Returns:
-        str: The template substituted
+        The template substituted.
     """
     if isinstance(raw, str):
         template = Template(raw)
     else:
         template = raw
-
-    params: Dict[str, float] = {}
-    for arg in args:
-        params.update(arg)
-    return template.safe_substitute(params)
+        
+    return template.safe_substitute(subs)
 
 
-def template_exec(in_file: Path, out_file: Path, *args: List[Param]) -> None:
+def template_exec(in_file: PathStr, out_file: PathStr, subs: Param) -> None:
     """Read a template from a file, execute it and write the result to a file.
 
     The template is executed using `template_subs`.
 
     Args:
-        in_file (Path): Path to the template file.
-        out_file (Path): Path to save the executed template.
-        *args (List[Param]): List of dictionaries with the names and values to be substituted.
+        in_file: Path to the template file.
+        out_file: Path to save the executed template.
+        *args: List of dictionaries with the names and values to be substituted.
 
     Raises:
-      OSError: The template file could not be found
+      OSError: The template file could not be found.
 
     Returns:
         None
     """
     with open(in_file, "r") as template_path, open(out_file, "w+") as result:
-        substituted = template_subs(template_path.read(), *args)
+        substituted = template_subs(template_path.read(), subs)
         result.write(substituted)
 
 
-def command_run(cmd: str, is_verbose: bool = False) -> None:
+def command_run(cmd: PathStr, is_verbose: bool = False) -> None:
     """Execute a given command using subprocess.run
 
     Args:
-        cmd (str): Shell command to execute.
-        is_verbose (bool): Whether to show the output of the command.
+        cmd: Shell command to execute.
+        is_verbose: Whether to show the output of the command.
+
+    Returns:
+        None
     """
-    if is_verbose:
-        run(shlex.split(cmd), check=True)
+    if isinstance(cmd, Path):
+        command: str = cmd.read_text()
     else:
-        run(shlex.split(cmd), check=True, stdout=DEVNULL, stderr=DEVNULL)
+        command = str(cmd)
+
+    if is_verbose:
+        run(shlex.split(command), check=True)
+    else:
+        run(shlex.split(command), check=True, stdout=DEVNULL, stderr=DEVNULL)
 
 
 ################################################################################
@@ -231,28 +234,35 @@ def command_run(cmd: str, is_verbose: bool = False) -> None:
 class SimBuilder:
     """
     Attributes:
-        project_path (str): Path to the project containing the files
-        project_name (str): Basename of the project_path
-        results_path (str): Path to the directory to store resuts
+        project_path: Path to the project containing the files
+        project_name: Basename of the project_path
+        results_path: Path to the directory to store resuts
     """
 
-    def __init__(self, project_path: Path = None):
+    def __init__(self, project_path: PathStr):
         self.project_path = Path(project_path).resolve()
         self.project_name = self.project_path.name
         self.results_path = self.project_path / "results"
 
-        self.__netlist = None
-        self.__netlist_out = self.project_path / f"{self.project_name}_net_out"
+        self.__netlist: PathLike = self.project_path / f"{self.project_name}.netlist"
+        self.__netlist_out: PathLike = (
+            self.project_path / f"{self.project_name}_net_out"
+        )
 
-        self.__custom_fns = {}
-        self.__is_parametric, self.__is_sweeps = False, False
-        self.__params_def, self.__sweeps_def = {}, {}
+        self.__custom_fns: Dict[str, Callable] = {}
+        self.__is_parametric: bool = False
+        self.__is_sweeps: bool = False
+        self.__params_def: ParamDef = {}
+        self.__sweeps_def: ParamDef = {}
 
         self.__is_ocean = False
-        self.__cadence_project, self.__ocean_script = None, None
+        self.__cadence_project = None
+        self.__ocean_script = None
 
         self.__cmd = None
         self.is_verbose = False
+
+        self.__props: Dict[str, Any] = {}
 
     def __repr__(self) -> str:
         """Pretty print the SimBuiler"""
@@ -260,17 +270,19 @@ class SimBuilder:
             f"Project Path: {self.project_path}\n"
             f"Results path: {self.results_path}\n"
             f"Netlist: {self.__netlist}\n"
-            f"Ocean: {self.__is_ocean}\n"
             f"Parametric: {self.__is_parametric}\n"
             f"Has sweeps: {self.__is_sweeps}"
         )
+        if self.__is_ocean:
+            txt = f"{txt}" f"Ocean script: {self.__ocean_script}\n"
+
         return txt
 
     def scaffold(self, create_all: bool) -> None:
         """Create the project structure
 
         Args:
-            create_all (bool): If True, create all single files, else
+            create_all: If True, create all single files, else
                 create only project and results directory
 
         Returns:
@@ -282,9 +294,9 @@ class SimBuilder:
         if not create_all:
             return
 
-        def default_or_create(file: Path, ext: str):
+        def default_or_create(file: Union[PathLike, None], ext: str):
             """Check if the file exists, otherwise create the a default one"""
-            if file is not None and file.exists():
+            if file is not None and Path(file).exists():
                 return file
             try:
                 return files_find_ext(ext, self.project_path)[0]
@@ -312,6 +324,10 @@ class SimBuilder:
         self.__params_def = {}
         self.__sweeps_def = {}
 
+    def with_props(self, props: Dict[str, Any]) -> None:
+        """ """
+        self.__props = props
+
     def with_netlist(self, netlist_path: Path) -> None:
         """Set the netlist to use
 
@@ -335,7 +351,7 @@ class SimBuilder:
         """
         self.__custom_fns = custom_fns
 
-    def with_simulator(self, command: Union[Path, str] = None) -> None:
+    def with_simulator(self, command: PathStr = None) -> None:
         """Assign the simulatior command
 
         Special variables are substituted to the command, including:
@@ -351,30 +367,19 @@ class SimBuilder:
             return
 
         if command is None:
-            try:
-                cmd = files_find_ext("command", self.project_path)[0]
-            except IndexError:
+            command_file = files_find_ext("command", self.project_path)
+            if not command_file:
                 raise ValueError(
                     "Please provide a simulator command or a file containing the script."
                 )
+            self.__cmd = command_file[0].read_text()
         else:
             if Path(command).exists():
                 with open(command, "r") as cmd_fd:
                     lines = [l.strip() for l in cmd_fd.readlines()]
-                    cmd = " ".join(lines)
+                    self.__cmd = " ".join(lines)
             else:
-                cmd = command
-
-        internals = {
-            "{netlist}": str(self.__netlist_out),
-            "{results}": str(self.results_path),
-            "{project}": str(self.project_name),
-            "{project_path}": str(self.project_path),
-        }
-        for key, value in internals.items():
-            cmd = cmd.replace(key, value)
-
-        self.__cmd = cmd
+                self.__cmd = command
 
     def with_parametric(self, params_path: Path = None) -> None:
         """
@@ -382,10 +387,10 @@ class SimBuilder:
             None
         """
         if params_path is None:
-            try:
-                params_file = files_find_ext("params", self.project_path)[0]
-            except IndexError:
+            params_files = files_find_ext("params", self.project_path)
+            if not params_files:
                 raise ValueError("Parameters template file does not exist.")
+            params_file = params_files[0]
         else:
             if Path(params_path).exists():
                 params_file = params_path
@@ -395,30 +400,38 @@ class SimBuilder:
         self.__is_parametric = True
         self.__params_def = params_parse(params_file)
 
-    def with_sweeps(self, sweeps_path: Path = None):
+    def with_sweeps(self, sweeps_path: Path = None) -> None:
         """ """
         self.__is_sweeps = True
-        if sweeps_paths is None:
+        if sweeps_path is None:
             try:
                 sweeps_file = files_find_ext("sweeps", self.project_path)[0]
             except IndexError:
                 raise ValueError("Sweeps template file does not exist.")
         else:
-            params_file = sweeps_path
+            sweeps_file = sweeps_path
 
-        self.__sweeps_def = sweeps_parse(sweeps_file)
+        self.__sweeps_def = params_parse(sweeps_file)
 
-    def with_ocean(self, cadence_project: Path, *, ocean_script: Path = None):
+    def with_ocean(
+        self, cadence_project: PathLike, *, ocean_script: Path = None
+    ) -> None:
         """
+        Args:
+            cadence_project: Path to the project inside cadence
+            ocean_script: Path to the ocean script to execute
+
+        Returns:
+            None
         To use ocean the netlist has to be copied into the cadence project path.
         We can create a temporary dir, copy the whole project and do it there,
         to allow for parallel simulations.
-
-        TODO: Read .ocn file
         """
         self.__is_ocean = True
+
         if not Path(cadence_project).exists():
             raise ValueError(f"{cadence_project} does not exist.")
+        self.__cadence_project = cadence_project
 
         self.__netlist_out = Path(
             self.__cadence_project, "spectre/schematic/netlist/netlist"
@@ -441,7 +454,7 @@ class SimBuilder:
     def run_iterations(self, iterations: int) -> Generator:
         """
         Args:
-            iterations (int): Number of iterations to run
+            iterations: Number of iterations to run
 
         Returns:
             Generator: Generator for every single simulation.
@@ -454,19 +467,19 @@ class SimBuilder:
         for i in range(1, iterations + 1):
             yield self.run_single(i)
 
-    def run_single(self, iteration: int = None):
+    def run_single(self, iteration: int = None) -> Tuple[Param, Param]:
         """Run a single simulation
 
         Args:
-            iteration (int): Index of the iteration if multiple are to be run.
+            iteration: Index of the iteration if multiple are to be run.
 
         Returns:
-            (dict, dict): Parameters and sweeps for the run
+            Parameters and sweeps for the run
         """
         if self.__cmd is None:
             raise ValueError("Simulation command has not been defined")
 
-        subs_dict = {}
+        subs_dict: Param = {}
         if self.__is_parametric:
             params = params_generate(self.__params_def, self.__custom_fns)
             subs_dict.update(params)
@@ -479,29 +492,35 @@ class SimBuilder:
         else:
             sweeps = None
 
+        subs_dict.update(
+            {
+                "netlist": self.__netlist_out,
+                "results": self.results_path,
+                "project": self.project_name,
+                "project_path": self.project_path,
+            }
+        )
+        if iteration is not None:
+            subs_dict.update({"iteration": iteration})
+
+        subs_dict.update(self.__props)
+
         template_exec(self.__netlist, self.__netlist_out, subs_dict)
 
         if self.__is_ocean:
-            template_exec(
-                self.__ocean_script,
-                self.__ocean_out,
-                subs_dict,
-                {"{netlist}": self.__netlist_out, "{iteration}": iteration},
-            )
+            template_exec(self.__ocean_script, self.__ocean_out, subs_dict)
 
-        cmd = self.__cmd
+        cmd: Template = Template(self.__cmd)
+        command: str = cmd.safe_substitute(subs_dict)
 
-        if iteration is not None:
-            cmd = self.__cmd.replace("{iteration}", str(iteration))
-
-        command_run(cmd, self.is_verbose)
+        command_run(command, self.is_verbose)
 
         return params, sweeps
 
 
 if __name__ == "__main__":
-    import sys
     import argparse
+    import sys
 
     parser = argparse.ArgumentParser(
         description="""
