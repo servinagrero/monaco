@@ -3,6 +3,7 @@
 <h3 align='center'>Python aided Monte Carlo and Parametric simulations in Cadence
 </h3>
 
+
 # Introduction
 
 This script provides functionaly to perform MC and Parametric simulations using Cadence.
@@ -13,61 +14,122 @@ This script was created to bypass the limitations of cadence and to allow for mo
 
 Python 3.X is required to run the script. It works entirely with the standard library so there is no need to install any more dependencies.
 
+Sphinx is needed to build the documentation.
+
 # Usage
 
-The simulations are configured in a JSON file, which in the code is referred as `props`. Multiple projects can be defined in the same props file.
+This project started as a way to ease the process of generating parametrics simulations to overcome the limitations of Cadence, mainly the generation of Monte Carlo simulations with great number of parameters while also lacking the statistics model files.
 
-For every project, there needs to be at least two parameters:
+The main pipeline of the framework is the following:
 
-- `project`: Path to the project containing the files.
+Netlist -> Subs(Netlist, [Ocean], Parameters, Sweeps, Props) -> Simulator(Output) -> Results
 
-- `iterations`: Number of simulations to be executed.
 
-```json
-{ "project": "/path/to/project", "iterations": 10 }
+## Scaffolding
+
+The basic usage of the library is to scaffold a project. The following command with generate the project directory and results directory. If `-a` is supplied, it will generate the template for all types of files.
+
+```shell
+python3 -m monaco -p /path/to/project -a
 ```
 
-Other values can be added to the props for later use, such as follows:
+For the configuration of the simulations, we can point the SimBuilder to our files or we can rely on automatic selection, being this:
 
-```json
-{
-  "project": "/path/to/project",
-  "iterations": 10,
-  "cadence_project": "/path/to/cadence/project",
-  "results": "results.csv",
-  "counter_file": "counter.csv"
-}
-```
+- `Netlist file`: /path/to/project/project.netlist
+- `Parameters file`: /path/to/project/project.params
+- `Sweeps file`: /path/to/project/project.sweeps
+- `Simulation file`: /path/to/project/project.command
+- `Ocean script`: /path/to/project/project.ocn
 
-The parameters to be generated for each iteration are read from `<project>/name.params`. The name of the file is not important but the suffix is. The parameters file should have the following
+`Simulation file` accepts a file or a string with the command to execute
+
+## Parameters and sweeps
+
+As explained before, the parameters and sweeps are read from files. The syntax to define parameters is the following:
 
 ```text
-# This is a comment
 # param name arg1 arg2 ... argN
+# This is a comment
 
 temp uniform 25 30
 width normalvariate 50 3
 ```
 
-> The name of the functions has to be the same as the functions contained in the random module.
+The functions to generate the parameters and sweeps are chosen with a preference list, being `custom_fns`, `numpy.random` and lastly `random`.
 
-Moreover, custom functions can be added by updating the dict `CUSTOM_FUNCTIONS` where the key is the name of the function and the value is the function itself.
-
-The files used as template are executed using python's `string.Template.safe_substitute()`.
-
-If the file `<project>/name.ocn` exists, ocean is used to run the simulation. This file is also executed as a template and written to `<project>/simulation.ocn`. If the file is not found, the file `cmdsimulation` (case insensitive) is read and it's contents are used to execute each simulation.
-
-This functions allow the use of a user defined callback that is executed after every simulation.
-The callback has the following signature:
-
+Custom functions can be added in the following way:
 ```python
-callback_fn(props: Dict, *args, **kwargs) -> None
+CUSTOM_FUNCTIONS = {
+    "span%": lambda mu, span: random.uniform(mu - (mu * span), mu + (mu * span))
+}
+
+sim = SimBuilder(project_path)
+sim.with_custom_fns(CUSTOM_FUNCTIONS)
 ```
 
-This props dictionary is the original one with two new fields:
+### WIP
 
-- parameters: Dictionary containing the names and values of the parameters generated for that iteration.
-- options: Dictionary containing other configurations used for ocean.
+Generation of sweeps
+
+# Substitution mechanism
+
+Besides the parameters and the sweeps, there are internal variables that are substituted into every file every time a simulation is going to run, being those:
+
+- `netlist`: Absolute path to the resulting netlist.
+- `results`: Absolute path to the results directory inside the project
+- `project_path`: Absolute path to the project.
+- `project`: Name of the project. Equivalent to the last directory of project_path.
+- `iteration`: Number of the iteration if `run_iterations` is used.
+
+More over, we can define custom properties (called `props` internally) to define custom properties that are not generated with the parameters or the sweeps but we still want to be included.
+
+The files used as template are executed using python's `string.Template.safe_substitute()`. This means that parameters that are wrongly typed will not get substituted and will results in errors during the execution of the simulations.
+
+> To use a variable, it has to be written as ${variable}
+
+# Examples
+
+```python
+import pandas as pd
+from monaco import SimBuilder
+
+project_path = Path("./test_project")
+results_path = Path("./test_project/results")
+sim = SimBuilder(project_path)
+
+# To create the results directory and all files if they don't exist
+sim.scaffold(create_all=True) 
+
+# We can print a SimBuilder instance to get information
+print(sim)
+
+# Project Path: /path/to/test_project
+# Results path: /path/to/test_project/results
+# Netlist: /path/to/test_project/test_project.netlist
+# Parametric: True
+# Has sweeps: False
+
+sim.with_parametric() # We select parametric analysis
+sim.with_sweeps() # And also sweep generation
+
+params, sweeps = sim.run_single()
+results = pd.read_csv(results_path / 'freq.csv')
+# We can do what we want with the results
+
+# Since `SimBuilder.run_iterations` retuns an iterator, we can advace the iterations when we want:
+simulations = sim.run_iterations(10)
+params, sweeps = next(simulations)
+
+# Or with a for loop
+for params, sweeps in simulations:
+    print("Iteration finished")
+
+# For advance usage, we can rely on Ocean to launch our simulations
+# Cadence_project points to the directory inside Cadence where the files are stored
+sim.with_ocean(cadence_project)
+```
+
+
 
 ## License
 
