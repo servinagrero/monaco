@@ -71,7 +71,7 @@ def params_generate(
 ) -> Param:
     """Generate the random params.
 
-    The function is chosen with a list in the following order: 
+    The function is chosen with a list in the following order:
     [custom_fns, random, numpy.random]
 
     Args:
@@ -112,7 +112,7 @@ def params_parse(params_def: PathStr) -> ParamDef:
     ```
 
     Empty lines and lines with comments are removed.
-    The name of the parameter has to be the same one than in the 
+    The name of the parameter has to be the same one than in the
     template files but without the \$.
     The argumens are given in a list separated by spaces.
 
@@ -458,8 +458,8 @@ class SimBuilder:
             params_files = files_find_ext("params", self.project_path)
             if not params_files:
                 raise ValueError("Parameters template file does not exist.")
-            if Path(params_files[0]).exists():
-                raise ValueError("Pameters file {params_files[0]} does not exist.")
+            if not Path(params_files[0]).exists():
+                raise ValueError("Parameters file {params_files[0]} does not exist.")
             params_file = params_files[0]
         elif Path(params_path).exists():
             params_file = params_path
@@ -492,7 +492,7 @@ class SimBuilder:
             sweeps_files = files_find_ext("sweeps", self.project_path)
             if not sweeps_files:
                 raise ValueError("Sweeps template file does not exist.")
-            if Path(sweeps_files[0]).exists():
+            if not Path(sweeps_files[0]).exists():
                 raise ValueError("Sweeps file {sweeps_files[0]} does not exist.")
             sweeps_file = sweeps_files[0]
         elif Path(sweeps_path).exists():
@@ -529,7 +529,7 @@ class SimBuilder:
             ocean_files = files_find_ext("ocn", self.project_path)
             if not ocean_files:
                 raise ValueError("Ocean script file does not exist.")
-            if Path(ocean_files[0]).exists():
+            if not Path(ocean_files[0]).exists():
                 raise ValueError("Ocean script {ocean_files[0]} does not exist.")
             self.__ocean_script = ocean_files[0]
         elif Path(ocean_script).exists():
