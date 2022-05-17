@@ -160,7 +160,7 @@ def params_parse(params_def: PathStr) -> ParamDef:
     return data
 
 
-def sweeps_generate(sweeps_def: ParamDef, custom_fns: Dict[str, Callable]) -> Generator:
+def sweeps_generate(sweeps_def: ParamDef, custom_fns: Dict[str, Callable], n_repeats: int = 0) -> Generator:
     """Extract sweeps definitions from a file or read them directly.
 
     The sweeps are defined in the same way the parameters are defined.
@@ -168,6 +168,7 @@ def sweeps_generate(sweeps_def: ParamDef, custom_fns: Dict[str, Callable]) -> Ge
 
     Args:
         sweeps_def: Path to the sweeps definition file or the definition itself.
+        n_repeats: Number of times to repeat each sweep.
 
     Raises:
         OSError: The sweeps file cannot be opened.
@@ -193,7 +194,9 @@ def sweeps_generate(sweeps_def: ParamDef, custom_fns: Dict[str, Callable]) -> Ge
 
     keys, values = zip(*sweeps.items())
     for bundle in product(*values):
-        yield dict(zip(keys, bundle))
+        # for i in range(1, n_repeats + 1):
+            # yield dict(zip(keys, bundle))
+        yield from [dict(zip(keys, bundle))] * (n_repeats + 1)
 
 
 def template_subs(raw: Union[Template, str], subs: Param) -> str:
@@ -471,7 +474,7 @@ class SimBuilder:
         self.__is_parametric = True
         self.__params_def = params_parse(params_file)
 
-    def with_sweeps(self, sweeps_path: Path = None) -> None:
+    def with_sweeps(self, sweeps_path: Path = None, n_repeats: int = 0) -> None:
         """Assign the sweeps definitions.
 
         By default, sweeps are read from `project_path/project.sweeps`.
@@ -504,7 +507,7 @@ class SimBuilder:
 
         self.__is_sweeps = True
         self.__sweeps_def = params_parse(sweeps_file)
-        self.__sweeps = sweeps_generate(self.__sweeps_def, self.__custom_fns)
+        self.__sweeps = sweeps_generate(self.__sweeps_def, self.__custom_fns, n_repeats)
 
     def with_ocean(self, cadence_project: Path, *, ocean_script: Path = None) -> None:
         """
