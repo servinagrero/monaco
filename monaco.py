@@ -160,7 +160,9 @@ def params_parse(params_def: PathStr) -> ParamDef:
     return data
 
 
-def sweeps_generate(sweeps_def: ParamDef, custom_fns: Dict[str, Callable], n_repeats: int = 0) -> Generator:
+def sweeps_generate(
+    sweeps_def: ParamDef, custom_fns: Dict[str, Callable], n_repeats: int = 0
+) -> Generator:
     """Extract sweeps definitions from a file or read them directly.
 
     The sweeps are defined in the same way the parameters are defined.
@@ -195,7 +197,7 @@ def sweeps_generate(sweeps_def: ParamDef, custom_fns: Dict[str, Callable], n_rep
     keys, values = zip(*sweeps.items())
     for bundle in product(*values):
         # for i in range(1, n_repeats + 1):
-            # yield dict(zip(keys, bundle))
+        # yield dict(zip(keys, bundle))
         yield from [dict(zip(keys, bundle))] * (n_repeats + 1)
 
 
@@ -294,6 +296,7 @@ class SimBuilder:
 
         self.__props: Dict[str, Any] = {}
         self.__sweeps: Optional[Generator] = None
+        self.__params: Optional[Generator] = None
 
     def __repr__(self) -> str:
         """Pretty print the SimBuiler"""
@@ -363,6 +366,7 @@ class SimBuilder:
         self.__params_def = {}
         self.__sweeps_def = {}
         self.__sweeps = None
+        self.__params = None
 
     def with_props(self, props: Dict[str, Any], reset: bool = True) -> None:
         """Set the internal properties.
@@ -444,6 +448,34 @@ class SimBuilder:
         else:
             raise ValueError(f"Please provide simulator command.")
 
+    def load_parameters(self, parameters: Union[List, str, Path]) -> None:
+        """Load parameters that are already created.
+
+        Mainly used to repeat simulations with the same set of parameters.
+        The schema of these parameters are checked against the schema
+        of the parameters defined with `with_parametric`.
+
+        The parameters can be supplied as a list of dictionaries, a Path pointing
+        to a file containing a json dump of the parameters or a string, containing
+        also a json dump.
+
+        Args:
+            params: Path to the parameters or the definition itself.
+        """
+        if isinstance(parameters, list):
+            params = parameters
+        elif Path(parameters).exists():
+            params = json.loads(Path(parameters).read_text())
+        elif isinstance(parameters, str):
+            params = json.loads(parameters)
+
+        if self.__params_def.keys() != params[0].keys():
+            raise ValueError(
+                "Schema of parameters does not match with defined parameters."
+            )
+
+        self.__params = iter(params)
+
     def with_parametric(self, params_path: Path = None) -> None:
         """Assign the paremeters definitions.
 
@@ -473,6 +505,7 @@ class SimBuilder:
 
         self.__is_parametric = True
         self.__params_def = params_parse(params_file)
+        self.__params = None
 
     def with_sweeps(self, sweeps_path: Path = None, n_repeats: int = 0) -> None:
         """Assign the sweeps definitions.
@@ -576,7 +609,13 @@ class SimBuilder:
 
         subs_dict: Param = {}
         if self.__is_parametric:
-            params = params_generate(self.__params_def, self.__custom_fns)
+            if self.__params:
+                try:
+                    params = next(self.__params)
+                except StopIteration as e:
+                    raise StopIteration("Can not run any more paremeters") from e
+            else:
+                params = params_generate(self.__params_def, self.__custom_fns)
             subs_dict.update(params)
         else:
             params = None
@@ -586,7 +625,7 @@ class SimBuilder:
                 sweeps: Param = next(self.__sweeps)
                 subs_dict.update(sweeps)
             except StopIteration as e:
-                raise ValueError("Can not run any more sweeps") from e
+                raise StopIteration("Can not run any more sweeps") from e
         else:
             sweeps = None
 
