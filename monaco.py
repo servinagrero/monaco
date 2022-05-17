@@ -4,13 +4,13 @@ import argparse
 import json
 import random
 import shlex
-from os import PathLike
+from itertools import product
 from datetime import datetime
 from pathlib import Path
 from string import Template
 from subprocess import DEVNULL, run
 from threading import Thread
-from typing import Callable, Dict, Generator, List, Tuple, Union, Any, Mapping
+from typing import Callable, Dict, Generator, List, Tuple, Union, Any, Mapping, Optional
 
 import numpy as np
 
@@ -21,30 +21,10 @@ __url__ = "https://github.com/servinagrero/Monaco-cadence"
 
 """
 Generate MC or parametric simulations for Cadence.
-
-The configuration, called `props` in the source code, is stored in a JSON file.
-
-To execute a given project, the following values are mandatory:
-
-- project: Path to the project to find the necesary files.
-- iterations: Number of iterations to execute.
-
-Any other values added to the props can be later used in the callback function.
-
-The parameters are read from a file with extension `.params`.
-The parameters are defined in the file as follows
-
-# This is a comment
-name function arg1 arg2 ... argN
-temp uniform 20 30
-
-CUSTOM_FUNCTIONS = {
-    "span%": lambda mu, span: random.uniform(mu - (mu * span), mu + (mu * span))
-}
 """
 
-PathStr = Union[str, PathLike]
-ParamDef = Dict[str, Dict[str, Union[List[str], List[float]]]]
+PathStr = Union[str, Path]
+ParamDef = Dict[str, Dict[str, Union[str, List[str]]]]
 Param = Dict[str, Union[float, str]]
 
 
@@ -55,7 +35,7 @@ def files_find_ext(ext: str, dir: PathStr) -> List[Path]:
         ext: Extension of the file to be found.
         dir: Directory to look for files.
 
-    Yields:
+    Returns:
         List of files in the directory.
     """
     return list(Path(dir).resolve().glob(r"*." + ext))
@@ -86,24 +66,28 @@ def files_filter_ext(files: List[Path], ext: str) -> List[Path]:
     return [f for f in files if f.suffix == ext]
 
 
-def params_generate(params_def: ParamDef, custom_fns: Dict[str, Callable]) -> Param:
+def params_generate(
+    params_def: ParamDef, custom_fns: Dict[str, Callable] = None
+) -> Param:
     """Generate the random params.
+
+    The function is chosen with a list in the following order: 
+    [custom_fns, random, numpy.random]
 
     Args:
         params_def: Definition of the parameters.
 
-    Returns:
-        ParamDef: Names and values of the parameters.
-
     Raises:
-      OSError: The parameters file cannot be opened.
-      AttributeError: The name of the function is not found.
+        OSError: The parameters file cannot be opened.
+
+    Returns:
+        Param: Names and values of the parameters.
     """
     functions: Dict[str, Callable] = custom_fns if custom_fns else {}
     params: Param = {}
 
     for param, info in params_def.items():
-        fns = []
+        fns: List[Optional[Callable]] = []
         fns.append(functions.get(info["function"], None))
         fns.append(getattr(np.random, info["function"], None))
         fns.append(getattr(random, info["function"], None))
@@ -116,10 +100,10 @@ def params_generate(params_def: ParamDef, custom_fns: Dict[str, Callable]) -> Pa
     return params
 
 
-def params_parse(params_file: PathStr) -> ParamDef:
-    """Extract parameter definitions from a file.
+def params_parse(params_def: PathStr) -> ParamDef:
+    """Extract parameter definitions from a file or read the directly.
 
-    The parameters are read from the file in the following way:
+    The parameters are defined in the following way:
 
     ```
     \# This is a comment\n
@@ -127,43 +111,89 @@ def params_parse(params_file: PathStr) -> ParamDef:
     temp uniform 20 30\n
     ```
 
-    The name of the parameter has to be the same one than in the template files but without the $.
-    The function is chosen with a list in the following order: [custom_fns, numpy.random, random]
+    Empty lines and lines with comments are removed.
+    The name of the parameter has to be the same one than in the 
+    template files but without the \$.
     The argumens are given in a list separated by spaces.
 
     Args:
-        params_file: Path to the parameter definition file.
+        params_def: Path to the parameter definition file or the definition itself.
 
     Raises:
-      OSError: The parameters file cannot be opened.
-      AttributeError: The name of the function is not found.
+        OSError: The parameters file cannot be opened.
 
     Returns:
         ParamDef: Names and values of the parameters.
     """
     data: ParamDef = {}
 
-    def cast_value(value: str):
-        "Cast a value to a float. In case it is not possible, return it as string"
+    if Path(params_def).exists():
+        with open(params_def, "r+") as params_fd:
+            content = [l.strip() for l in params_fd.readlines()]
+    elif isinstance(params_def, str):
+        content = params_def.split("\n")
+
+    def cast_value(value: str) -> Union[int, float, str]:
+        """Try to cast a value to different types.
+        By order, the types are int, float and str.
+
+        Args:
+            The value to cast.
+
+        Returns:
+            The casted value or the default value in case it fails
+        """
         try:
-            return float(value)
+            return int(value)
         except ValueError:
-            return value
+            try:
+                return float(value)
+            except ValueError:
+                return value
 
-    with open(params_file, "r+") as params_fd:
-        content = params_fd.readlines()
-        valid_lines = filter(lambda l: not l.strip().startswith("#"), content)
-
-        for line in valid_lines:
-            param, function, *vals = line.split(" ")
-            values = [cast_value(v) for v in vals]
-            data[param] = {"function": function, "values": values}
+    valid_lines = filter(lambda l: l and not l.startswith("#"), content)
+    for line in valid_lines:
+        param, function, *vals = line.split(" ")
+        values = [cast_value(v) for v in vals]
+        data[param] = {"function": function, "values": values}
 
     return data
 
 
-def sweeps_generate(sweeps_def: ParamDef, custom_fns: Dict[str, Callable]) -> Param:
-    raise NotImplementedError
+def sweeps_generate(sweeps_def: ParamDef, custom_fns: Dict[str, Callable]) -> Generator:
+    """Extract sweeps definitions from a file or read them directly.
+
+    The sweeps are defined in the same way the parameters are defined.
+    For that, see `params_generate`.
+
+    Args:
+        sweeps_def: Path to the sweeps definition file or the definition itself.
+
+    Raises:
+        OSError: The sweeps file cannot be opened.
+        StopIteration: When all sweeps have been exhausted.
+
+    Returns:
+        Generator: Names and values of the sweeps.
+    """
+    fn_lut = {"list": lambda *args: list(args), "range": lambda *args: range(*args)}
+    functions: Dict[str, Callable] = custom_fns if custom_fns else {}
+    sweeps: Param = {}
+
+    for sweep, info in sweeps_def.items():
+        fns = []
+        fns.append(functions.get(info["function"], None))
+        fns.append(fn_lut.get(info["function"], None))
+        fns.append(getattr(np, info["function"], None))
+        if not any(fns):
+            raise ValueError(f"Function {info['function']} does not exist")
+
+        fn = next(fn for fn in fns if fn is not None)
+        sweeps[sweep] = fn(*info["values"])
+
+    keys, values = zip(*sweeps.items())
+    for bundle in product(*values):
+        yield dict(zip(keys, bundle))
 
 
 def template_subs(raw: Union[Template, str], subs: Param) -> str:
@@ -172,27 +202,25 @@ def template_subs(raw: Union[Template, str], subs: Param) -> str:
     If the argument is a string it gets converted into a Template.
 
     Args:
-        raw: Text to be substituted. Converted automatically to Template if needed
+        raw: Text to be substituted. Converted automatically to Template if needed.
         *args: List of parameter definitions.
 
     Returns:
         The template substituted.
     """
     if isinstance(raw, str):
-        template = Template(raw)
+        return Template(raw).safe_substitute(subs)
     else:
-        template = raw
-
-    return template.safe_substitute(subs)
+        return raw.safe_substitute(subs)
 
 
-def template_exec(in_file: PathStr, out_file: PathStr, subs: Param) -> None:
+def template_exec(input_txt: PathStr, out_file: PathStr, subs: Param) -> None:
     """Read a template from a file, execute it and write the result to a file.
 
     The template is executed using `template_subs`.
 
     Args:
-        in_file: Path to the template file.
+        input_txt: Path to the template file or the template itself.
         out_file: Path to save the executed template.
         *args: List of dictionaries with the names and values to be substituted.
 
@@ -202,8 +230,11 @@ def template_exec(in_file: PathStr, out_file: PathStr, subs: Param) -> None:
     Returns:
         None
     """
-    with open(in_file, "r") as template_path, open(out_file, "w+") as result:
-        substituted = template_subs(template_path.read(), subs)
+    with open(out_file, "w+") as result:
+        if isinstance(input_txt, Path):
+            substituted = template_subs(input_txt.read_text(), subs)
+        else:
+            substituted = template_subs(input_txt, subs)
         result.write(substituted)
 
 
@@ -217,10 +248,7 @@ def command_run(cmd: PathStr, is_verbose: bool = False) -> None:
     Returns:
         None
     """
-    if isinstance(cmd, Path):
-        command: str = cmd.read_text()
-    else:
-        command = str(cmd)
+    command: str = cmd.read_text() if isinstance(cmd, Path) else cmd
 
     if is_verbose:
         run(shlex.split(command), check=True)
@@ -244,10 +272,8 @@ class SimBuilder:
         self.project_name = self.project_path.name
         self.results_path = self.project_path / "results"
 
-        self.__netlist: PathLike = self.project_path / f"{self.project_name}.netlist"
-        self.__netlist_out: PathLike = (
-            self.project_path / f"{self.project_name}_net_out"
-        )
+        self.__netlist: Path = self.project_path / f"{self.project_name}.netlist"
+        self.__netlist_out: Path = self.project_path / f"{self.project_name}_net_out"
 
         self.__custom_fns: Dict[str, Callable] = {}
         self.__is_parametric: bool = False
@@ -256,13 +282,15 @@ class SimBuilder:
         self.__sweeps_def: ParamDef = {}
 
         self.__is_ocean = False
-        self.__cadence_project = None
-        self.__ocean_script = None
+        self.__cadence_project: Optional[PathStr] = None
+        self.__ocean_script: Optional[PathStr] = None
+        self.__ocean_out: Optional[PathStr] = None
 
-        self.__cmd = None
+        self.__cmd: Optional[str] = None
         self.is_verbose = False
 
         self.__props: Dict[str, Any] = {}
+        self.__sweeps: Optional[Generator] = None
 
     def __repr__(self) -> str:
         """Pretty print the SimBuiler"""
@@ -282,15 +310,12 @@ class SimBuilder:
             )
 
         if self.is_verbose:
-            txt = (
-                f"{txt}\n"
-                f'Command: {self.__cmd}'
-            )
+            txt = f"{txt}\n" f"Command: {self.__cmd}"
 
         return txt
 
     def scaffold(self, create_all: bool) -> None:
-        """Create the project structure
+        """Create the project structure.
 
         Args:
             create_all: If True, create all single files, else
@@ -305,7 +330,7 @@ class SimBuilder:
         if not create_all:
             return
 
-        def default_or_create(file: Union[PathLike, None], ext: str):
+        def default_or_create(file: Union[Path, None], ext: str):
             """Check if the file exists, otherwise create the a default one"""
             if file is not None and Path(file).exists():
                 return file
@@ -334,45 +359,61 @@ class SimBuilder:
         self.__ocean_script = ocean_file
         self.__params_def = {}
         self.__sweeps_def = {}
+        self.__sweeps = None
 
     def with_props(self, props: Dict[str, Any], reset: bool = True) -> None:
-        """ """
+        """Set the internal properties.
+
+        If reset is supplied, the internal properties are substituted by
+        the new props, otherwise they get updated.
+
+        Args:
+            props: Path to the netlist file.
+            reset: Whether to reset the props or update them.
+        """
         if reset is True:
             self.__props = props
         else:
             self.__props.update(props)
 
     def with_netlist(self, netlist_path: Path) -> None:
-        """Set the netlist to use
+        """Set the netlist to use.
+
+        If the method `with_simulator` is called first, then the netlist
+        points to the previous netlist.
 
         Args:
-            netlist_path (Path): Path to the netlist file.
-
-        TODO: If the method `with_simulator` is called first, then the netlist
-        points to the previous netlist.
+            netlist_path: Path to the netlist file.
         """
         if not Path(netlist_path).exists():
             raise ValueError(f"Netlist {netlist_path} does not exist")
         self.__netlist = netlist_path
 
-    def with_custom_fns(self, custom_fns: Dict[str, Callable]) -> None:
-        """Assign custom functions to generate sweeps and parameters
+    def with_custom_fns(
+        self, custom_fns: Dict[str, Callable], reset: bool = True
+    ) -> None:
+        """Assign custom functions to generate sweeps and parameters.
+
+        If reset is supplied the custom_fns get replace by the new ones,
+        otherwise they are updated.
+
         Params:
-            custom_fns (Dict[str, Callable]): Ditionary containing the functions definitions
+            custom_fns: Ditionary containing the functions definitions
+            reset: Whether to reset the custom_fns or update them.
 
         Returns:
             Nones
         """
-        self.__custom_fns = custom_fns
+        if reset is True:
+            self.__custom_fns = custom_fns
+        else:
+            self.__custom_fns.update(custom_fns)
 
     def with_simulator(self, command: PathStr = None) -> None:
-        """Assign the simulatior command
-
-        Special variables are substituted to the command, including:
-            {netlist}, {results}, {project}, {project_path}
+        """Assign the simulatior command.
 
         Args:
-            command (Union[Path, str]): String with the command to execute
+            command: String with the command to execute
                 or a path to a file whose contents is the command.
         """
 
@@ -381,22 +422,35 @@ class SimBuilder:
             return
 
         if command is None:
-            command_file = files_find_ext("command", self.project_path)
-            if not command_file:
+            command_files = files_find_ext("command", self.project_path)
+            if not command_files:
                 raise ValueError(
                     "Please provide a simulator command or a file containing the script."
                 )
-            self.__cmd = command_file[0].read_text()
+            if Path(command_files[0]).exists():
+                raise ValueError("Simulator file {command_files[0]} does not exist.")
+            self.__cmd = command_files[0].read_text().replace("\n", " ")
+
+        elif Path(command).exists():
+            with open(command, "r") as cmd_fd:
+                lines = [l.strip() for l in cmd_fd.readlines()]
+                self.__cmd = " ".join(lines)
+
+        elif isinstance(command, str):
+            self.__cmd = command
         else:
-            if Path(command).exists():
-                with open(command, "r") as cmd_fd:
-                    lines = [l.strip() for l in cmd_fd.readlines()]
-                    self.__cmd = " ".join(lines)
-            else:
-                self.__cmd = command
+            raise ValueError(f"Please provide simulator command.")
 
     def with_parametric(self, params_path: Path = None) -> None:
-        """
+        """Assign the paremeters definitions.
+
+        By default, parameters are read from `project_path/project.params`.
+        The sweeps definition can be supplied as a string or as a Path
+        pointing to the parameter definitions.
+
+        Args:
+            params_path: Path to parameters definition or the definition itself.
+
         Returns:
             None
         """
@@ -404,32 +458,55 @@ class SimBuilder:
             params_files = files_find_ext("params", self.project_path)
             if not params_files:
                 raise ValueError("Parameters template file does not exist.")
+            if Path(params_files[0]).exists():
+                raise ValueError("Pameters file {params_files[0]} does not exist.")
             params_file = params_files[0]
+        elif Path(params_path).exists():
+            params_file = params_path
+        elif isinstance(params_path, str):
+            params_file = params_path
         else:
-            if Path(params_path).exists():
-                params_file = params_path
-            else:
-                raise ValueError(f"Parameters file {params_path} does not exist")
+            raise ValueError(f"Please provide parameters.")
 
         self.__is_parametric = True
         self.__params_def = params_parse(params_file)
 
     def with_sweeps(self, sweeps_path: Path = None) -> None:
-        """ """
-        self.__is_sweeps = True
+        """Assign the sweeps definitions.
+
+        By default, sweeps are read from `project_path/project.sweeps`.
+        The sweeps definition can be supplied as a string or as a Path
+        pointing to the sweeps definitions.
+
+        Args:
+            sweeps_path: Path to sweeps definition or the definition itself.
+
+        Raises:
+            ValueError: If `Path(sweeps_path)` or the default sweeps_path does not exist.
+
+        Returns:
+            None
+        """
+
         if sweeps_path is None:
-            try:
-                sweeps_file = files_find_ext("sweeps", self.project_path)[0]
-            except IndexError:
+            sweeps_files = files_find_ext("sweeps", self.project_path)
+            if not sweeps_files:
                 raise ValueError("Sweeps template file does not exist.")
-        else:
+            if Path(sweeps_files[0]).exists():
+                raise ValueError("Sweeps file {sweeps_files[0]} does not exist.")
+            sweeps_file = sweeps_files[0]
+        elif Path(sweeps_path).exists():
+            params_file = sweeps_path
+        elif isinstance(sweeps_path, str):
             sweeps_file = sweeps_path
+        else:
+            raise ValueError(f"Please provide sweeps.")
 
+        self.__is_sweeps = True
         self.__sweeps_def = params_parse(sweeps_file)
+        self.__sweeps = sweeps_generate(self.__sweeps_def, self.__custom_fns)
 
-    def with_ocean(
-        self, cadence_project: PathLike, *, ocean_script: Path = None
-    ) -> None:
+    def with_ocean(self, cadence_project: Path, *, ocean_script: Path = None) -> None:
         """
         Args:
             cadence_project: Path to the project inside cadence
@@ -437,9 +514,6 @@ class SimBuilder:
 
         Returns:
             None
-        To use ocean the netlist has to be copied into the cadence project path.
-        We can create a temporary dir, copy the whole project and do it there,
-        to allow for parallel simulations.
         """
         self.__is_ocean = True
 
@@ -452,21 +526,25 @@ class SimBuilder:
         ).resolve()
 
         if ocean_script is None:
-            try:
-                self.__ocean_script = files_find_ext("ocn", self.project_path)[0]
-            except IndexError:
+            ocean_files = files_find_ext("ocn", self.project_path)
+            if not ocean_files:
                 raise ValueError("Ocean script file does not exist.")
+            if Path(ocean_files[0]).exists():
+                raise ValueError("Ocean script {ocean_files[0]} does not exist.")
+            self.__ocean_script = ocean_files[0]
+        elif Path(ocean_script).exists():
+            self.__ocean_script = ocean_script
+        elif isinstance(ocean_script, str):
+            self.__ocean_script = ocean_script
         else:
-            if Path(ocean_script).exists():
-                self.__ocean_script = ocean_script
-            else:
-                raise ValueError(f"Ocean script {ocean_script} does not exist.")
+            raise ValueError(f"Please provide sweeps.")
 
         self.__ocean_out = Path(self.project_path, f"ocn_{self.project_name}")
         self.__cmd = f"sh -c 'ocean -nograph < {self.__ocean_out}'"
 
     def run_iterations(self, iterations: int) -> Generator:
-        """
+        """Run a number of iterations.
+
         Args:
             iterations: Number of iterations to run
 
@@ -501,17 +579,20 @@ class SimBuilder:
             params = None
 
         if self.__is_sweeps:
-            sweeps = sweeps_generate(self.__sweeps_def, self.__custom_fns)
-            subs_dict.update(sweeps)
+            try:
+                sweeps: Param = next(self.__sweeps)
+                subs_dict.update(sweeps)
+            except StopIteration as e:
+                raise ValueError("Can not run any more sweeps") from e
         else:
             sweeps = None
 
         subs_dict.update(
             {
-                "netlist": self.__netlist_out,
-                "results": self.results_path,
-                "project": self.project_name,
-                "project_path": self.project_path,
+                "netlist": str(self.__netlist_out),
+                "results": str(self.results_path),
+                "project": str(self.project_name),
+                "project_path": str(self.project_path),
             }
         )
         if iteration is not None:
@@ -521,7 +602,7 @@ class SimBuilder:
 
         template_exec(self.__netlist, self.__netlist_out, subs_dict)
 
-        if self.__is_ocean:
+        if self.__is_ocean and self.__ocean_script and self.__ocean_out:
             template_exec(self.__ocean_script, self.__ocean_out, subs_dict)
 
         cmd: Template = Template(self.__cmd)
