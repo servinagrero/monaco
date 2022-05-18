@@ -1,16 +1,23 @@
 #!/usr/bin/env python3
 
-import argparse
-import json
 import random
 import shlex
+import json
 from itertools import product
-from datetime import datetime
 from pathlib import Path
 from string import Template
 from subprocess import DEVNULL, run
-from threading import Thread
-from typing import Callable, Dict, Generator, List, Tuple, Union, Any, Mapping, Optional
+from typing import (
+    Callable,
+    Dict,
+    Generator,
+    List,
+    Tuple,
+    Union,
+    Any,
+    Optional,
+    TypedDict,
+)
 
 import numpy as np
 
@@ -23,12 +30,18 @@ __url__ = "https://github.com/servinagrero/Monaco-cadence"
 Generate MC or parametric simulations for Cadence.
 """
 
-PathStr = Union[str, Path]
-ParamDef = Dict[str, Dict[str, Union[str, List[str]]]]
-Param = Dict[str, Union[float, str]]
+
+class FunctionDef(TypedDict):
+    function: str
+    values: List[Union[int, float, str]]
 
 
-def files_find_ext(ext: str, dir: PathStr) -> List[Path]:
+PathStr = str | Path
+ParameterDef = Dict[str, FunctionDef]
+Parameter = Dict[str, Union[float, str]]
+
+
+def files_find_ext(ext: str, files: PathStr | List[Path]) -> List[Path]:
     """List files in a directory with that match a extension.
 
     Args:
@@ -38,7 +51,10 @@ def files_find_ext(ext: str, dir: PathStr) -> List[Path]:
     Returns:
         List of files in the directory.
     """
-    return list(Path(dir).resolve().glob(r"*." + ext))
+    if isinstance(files, list):
+        return [f for f in files if f.suffix == r"." + ext]
+    else:
+        return list(Path(files).resolve().glob(r"*." + ext))
 
 
 def files_list(dir: PathStr, *args, **kwargs) -> List[Path]:
@@ -53,22 +69,9 @@ def files_list(dir: PathStr, *args, **kwargs) -> List[Path]:
     return [p for p in Path(dir).iterdir(*args, **kwargs) if p.is_file()]
 
 
-def files_filter_ext(files: List[Path], ext: str) -> List[Path]:
-    """Filter files from a list matching a extension.
-
-    Args:
-        files: List of files.
-        ext: Extension to filter.
-
-    Returns:
-        List of files that have the extension.
-    """
-    return [f for f in files if f.suffix == ext]
-
-
 def params_generate(
-    params_def: ParamDef, custom_fns: Dict[str, Callable] = None
-) -> Param:
+    params_def: ParameterDef, custom_fns: Optional[Dict[str, Callable]] = None
+) -> Parameter:
     """Generate the random params.
 
     The function is chosen with a list in the following order:
@@ -81,16 +84,18 @@ def params_generate(
         OSError: The parameters file cannot be opened.
 
     Returns:
-        Param: Names and values of the parameters.
+        Parameter: Names and values of the parameters.
     """
     functions: Dict[str, Callable] = custom_fns if custom_fns else {}
-    params: Param = {}
+    params: Parameter = {}
+
+    modules = [np.random, random]
 
     for param, info in params_def.items():
         fns: List[Optional[Callable]] = []
         fns.append(functions.get(info["function"], None))
-        fns.append(getattr(np.random, info["function"], None))
-        fns.append(getattr(random, info["function"], None))
+        fns.extend([getattr(mod, info["function"], None) for mod in modules])
+
         if not any(fns):
             raise ValueError(f"Function {info['function']} does not exist")
 
@@ -100,20 +105,18 @@ def params_generate(
     return params
 
 
-def params_parse(params_def: PathStr) -> ParamDef:
+def params_parse(params_def: PathStr) -> Optional[ParameterDef]:
     """Extract parameter definitions from a file or read the directly.
 
     The parameters are defined in the following way:
 
-    ```
-    \# This is a comment\n
-    name function arg1 arg2 ... argN\n
-    temp uniform 20 30\n
-    ```
+       # This is a comment
+       name function arg1 arg2 ... argN
+       temp uniform 20 30
 
     Empty lines and lines with comments are removed.
     The name of the parameter has to be the same one than in the
-    template files but without the \$.
+    template files but without the $.
     The argumens are given in a list separated by spaces.
 
     Args:
@@ -123,9 +126,9 @@ def params_parse(params_def: PathStr) -> ParamDef:
         OSError: The parameters file cannot be opened.
 
     Returns:
-        ParamDef: Names and values of the parameters.
+        ParameterDef: Names and values of the parameters.
     """
-    data: ParamDef = {}
+    content: List[str] = []
 
     if Path(params_def).exists():
         with open(params_def, "r+") as params_fd:
@@ -151,6 +154,7 @@ def params_parse(params_def: PathStr) -> ParamDef:
             except ValueError:
                 return value
 
+    data: Dict[str, FunctionDef] = {}
     valid_lines = filter(lambda l: l and not l.startswith("#"), content)
     for line in valid_lines:
         param, function, *vals = line.split(" ")
@@ -161,7 +165,7 @@ def params_parse(params_def: PathStr) -> ParamDef:
 
 
 def sweeps_generate(
-    sweeps_def: ParamDef, custom_fns: Dict[str, Callable], n_repeats: int = 0
+    sweeps_def: ParameterDef, custom_fns: Dict[str, Callable], n_repeats: int = 0
 ) -> Generator:
     """Extract sweeps definitions from a file or read them directly.
 
@@ -181,7 +185,7 @@ def sweeps_generate(
     """
     fn_lut = {"list": lambda *args: list(args), "range": lambda *args: range(*args)}
     functions: Dict[str, Callable] = custom_fns if custom_fns else {}
-    sweeps: Param = {}
+    sweeps: Parameter = {}
 
     for sweep, info in sweeps_def.items():
         fns = []
@@ -196,12 +200,10 @@ def sweeps_generate(
 
     keys, values = zip(*sweeps.items())
     for bundle in product(*values):
-        # for i in range(1, n_repeats + 1):
-        # yield dict(zip(keys, bundle))
         yield from [dict(zip(keys, bundle))] * (n_repeats + 1)
 
 
-def template_subs(raw: Union[Template, str], subs: Param) -> str:
+def template_subs(raw: Union[Template, str], subs: Parameter) -> str:
     """Substitute a template with a list of arguments.
 
     If the argument is a string it gets converted into a Template.
@@ -219,7 +221,7 @@ def template_subs(raw: Union[Template, str], subs: Param) -> str:
         return raw.safe_substitute(subs)
 
 
-def template_exec(input_txt: PathStr, out_file: PathStr, subs: Param) -> None:
+def template_exec(input_txt: PathStr, out_file: PathStr, subs: Parameter) -> None:
     """Read a template from a file, execute it and write the result to a file.
 
     The template is executed using `template_subs`.
@@ -283,8 +285,8 @@ class SimBuilder:
         self.__custom_fns: Dict[str, Callable] = {}
         self.__is_parametric: bool = False
         self.__is_sweeps: bool = False
-        self.__params_def: ParamDef = {}
-        self.__sweeps_def: ParamDef = {}
+        self.__params_def: ParameterDef = {}
+        self.__sweeps_def: ParameterDef = {}
 
         self.__is_ocean = False
         self.__cadence_project: Optional[PathStr] = None
@@ -295,8 +297,8 @@ class SimBuilder:
         self.is_verbose = False
 
         self.__props: Dict[str, Any] = {}
-        self.__sweeps: Optional[Generator] = None
-        self.__params: Optional[Generator] = None
+        self.__sweeps: Optional[Generator[Parameter, None, None]] = None
+        self.__params: Optional[Generator[Parameter, None, None]] = None
 
     def __repr__(self) -> str:
         """Pretty print the SimBuiler"""
@@ -336,10 +338,10 @@ class SimBuilder:
         if not create_all:
             return
 
-        def default_or_create(file: Union[Path, None], ext: str):
+        def default_or_create(file: Optional[PathStr], ext: str) -> Path:
             """Check if the file exists, otherwise create the a default one"""
             if file is not None and Path(file).exists():
-                return file
+                return Path(file)
             try:
                 return files_find_ext(ext, self.project_path)[0]
             except IndexError:
@@ -404,7 +406,7 @@ class SimBuilder:
         If reset is supplied the custom_fns get replace by the new ones,
         otherwise they are updated.
 
-        Params:
+        Args:
             custom_fns: Ditionary containing the functions definitions
             reset: Whether to reset the custom_fns or update them.
 
@@ -448,7 +450,7 @@ class SimBuilder:
         else:
             raise ValueError(f"Please provide simulator command.")
 
-    def load_parameters(self, parameters: Union[List, str, Path]) -> None:
+    def load_parameters(self, parameters: Union[List[Parameter], str, Path]) -> None:
         """Load parameters that are already created.
 
         Mainly used to repeat simulations with the same set of parameters.
@@ -595,7 +597,9 @@ class SimBuilder:
         for i in range(1, iterations + 1):
             yield self.run_single(i)
 
-    def run_single(self, iteration: int = None) -> Tuple[Param, Param]:
+    def run_single(
+        self, iteration: Optional[int] = None
+    ) -> Tuple[Optional[Parameter], Optional[Parameter]]:
         """Run a single simulation
 
         Args:
@@ -607,7 +611,7 @@ class SimBuilder:
         if self.__cmd is None:
             raise ValueError("Simulation command has not been defined")
 
-        subs_dict: Param = {}
+        subs_dict: Parameter = {}
         if self.__is_parametric:
             if self.__params:
                 try:
@@ -622,7 +626,7 @@ class SimBuilder:
 
         if self.__is_sweeps:
             try:
-                sweeps: Param = next(self.__sweeps)
+                sweeps: Optional[Parameter] = next(self.__sweeps)
                 subs_dict.update(sweeps)
             except StopIteration as e:
                 raise StopIteration("Can not run any more sweeps") from e

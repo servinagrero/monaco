@@ -1,7 +1,8 @@
-<h1 align='center'>MONACO CADENCE</h1>
-
-<h3 align='center'>Python aided Monte Carlo and Parametric simulations in Cadence
+<div align='center'>
+<img src="./assets/logo.svg" width="300px">
+<h3>Python aided Monte Carlo and Parametric simulations in Cadence
 </h3>
+</div>
 
 
 # Introduction
@@ -128,8 +129,6 @@ for params, sweeps in simulations:
 # Cadence_project points to the directory inside Cadence where the files are stored
 sim.with_ocean(cadence_project)
 ```
-
-
 
 ## License
 
