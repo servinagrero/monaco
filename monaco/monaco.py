@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import re
 import random
 import shlex
 import json
@@ -13,7 +14,6 @@ from typing import (
     Generator,
     List,
     Tuple,
-    Union,
     Any,
     Optional,
     TypedDict,
@@ -31,14 +31,17 @@ Generate MC or parametric simulations for Cadence.
 """
 
 
+ParameterVal = int | float | str
+
+
 class FunctionDef(TypedDict):
     function: str
-    values: List[Union[int, float, str]]
+    values: List[ParameterVal]
 
 
 PathStr = str | Path
 ParameterDef = Dict[str, FunctionDef]
-Parameter = Dict[str, Union[float, str]]
+Parameter = Dict[str, ParameterVal]
 
 
 def files_find_ext(ext: str, files: PathStr | List[Path]) -> List[Path]:
@@ -57,7 +60,7 @@ def files_find_ext(ext: str, files: PathStr | List[Path]) -> List[Path]:
         return list(Path(files).resolve().glob(r"*." + ext))
 
 
-def files_list(dir: PathStr, *args, **kwargs) -> List[Path]:
+def files_list(dir: PathStr) -> List[Path]:
     """List all regular files in a directory.
 
     Args:
@@ -66,7 +69,7 @@ def files_list(dir: PathStr, *args, **kwargs) -> List[Path]:
     Returns:
         List of files in the directory.
     """
-    return [p for p in Path(dir).iterdir(*args, **kwargs) if p.is_file()]
+    return [p for p in Path(dir).iterdir() if p.is_file()]
 
 
 def params_generate(
@@ -136,7 +139,7 @@ def params_parse(params_def: PathStr) -> Optional[ParameterDef]:
     elif isinstance(params_def, str):
         content = params_def.split("\n")
 
-    def cast_value(value: str) -> Union[int, float, str]:
+    def cast_value(value: str) -> ParameterVal:
         """Try to cast a value to different types.
         By order, the types are int, float and str.
 
@@ -154,12 +157,19 @@ def params_parse(params_def: PathStr) -> Optional[ParameterDef]:
             except ValueError:
                 return value
 
+    range_re = re.compile(r"^(\w+){(\d+:\d+)}.*")
     data: Dict[str, FunctionDef] = {}
     valid_lines = filter(lambda l: l and not l.startswith("#"), content)
     for line in valid_lines:
         param, function, *vals = line.split(" ")
         values = [cast_value(v) for v in vals]
-        data[param] = {"function": function, "values": values}
+        if "{" in param or "}":
+            name, range_str = range_re.search(param).groups()
+            start, end = [int(n) for n in range_str.split(":")]
+            for i in range(start, end):
+                data[f"{name}{i}"] = {"function": function, "values": values}
+        else:
+            data[param] = {"function": function, "values": values}
 
     return data
 
@@ -203,7 +213,7 @@ def sweeps_generate(
         yield from [dict(zip(keys, bundle))] * (n_repeats + 1)
 
 
-def template_subs(raw: Union[Template, str], subs: Parameter) -> str:
+def template_subs(raw: Template | str, subs: Parameter) -> str:
     """Substitute a template with a list of arguments.
 
     If the argument is a string it gets converted into a Template.
@@ -450,7 +460,7 @@ class SimBuilder:
         else:
             raise ValueError(f"Please provide simulator command.")
 
-    def load_parameters(self, parameters: Union[List[Parameter], str, Path]) -> None:
+    def load_parameters(self, parameters: List[Parameter] | str | Path) -> None:
         """Load parameters that are already created.
 
         Mainly used to repeat simulations with the same set of parameters.
@@ -544,7 +554,9 @@ class SimBuilder:
         self.__sweeps_def = params_parse(sweeps_file)
         self.__sweeps = sweeps_generate(self.__sweeps_def, self.__custom_fns, n_repeats)
 
-    def with_ocean(self, cadence_project: Path, *, ocean_script: Path = None) -> None:
+    def with_ocean(
+        self, cadence_project: PathStr, *, ocean_script: Path = None
+    ) -> None:
         """
         Args:
             cadence_project: Path to the project inside cadence
