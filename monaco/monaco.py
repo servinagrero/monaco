@@ -163,10 +163,10 @@ def params_parse(params_def: PathStr) -> Optional[ParameterDef]:
     for line in valid_lines:
         param, function, *vals = line.split(" ")
         values = [cast_value(v) for v in vals]
-        if "{" in param or "}":
+        if "{" in param and "}" in param:
             name, range_str = range_re.search(param).groups()
             start, end = [int(n) for n in range_str.split(":")]
-            for i in range(start, end):
+            for i in range(start, end + 1):
                 data[f"{name}{i}"] = {"function": function, "values": values}
         else:
             data[param] = {"function": function, "values": values}
@@ -175,7 +175,7 @@ def params_parse(params_def: PathStr) -> Optional[ParameterDef]:
 
 
 def sweeps_generate(
-    sweeps_def: ParameterDef, custom_fns: Dict[str, Callable], n_repeats: int = 0
+    sweeps_def: ParameterDef, custom_fns: Dict[str, Callable], n_repeats: int = 1
 ) -> Generator:
     """Extract sweeps definitions from a file or read them directly.
 
@@ -210,7 +210,7 @@ def sweeps_generate(
 
     keys, values = zip(*sweeps.items())
     for bundle in product(*values):
-        yield from [dict(zip(keys, bundle))] * (n_repeats + 1)
+        yield from [dict(zip(keys, bundle))] * n_repeats
 
 
 def template_subs(raw: Template | str, subs: Parameter) -> str:
@@ -332,6 +332,39 @@ class SimBuilder:
 
         return txt
 
+    def __get_file_input(self, ext: str, file_input: PathStr = None) -> PathStr:
+        """Obtain an input from a default file, a supplied file or a string.
+
+        The in put can be provided by a file path or a string. If no argument
+        is provided, the input is looked from the default path inside the
+        project_path.
+
+        Args:
+            ext: Extension for the default path.
+            file_input: Path to the file, if provided, or string.
+
+        Raises:
+            ValueError: If the default file or the file provided
+                do not exist.
+
+        Returns:
+            Path to the input file or the string itself.
+        """
+        if file_input is None:
+            files = files_find_ext(ext, self.project_path)
+            if not files:
+                raise ValueError(f"Template for {ext} not found.")
+            # TODO: Is this check necesary?
+            if not Path(files[0]).exists():
+                raise ValueError("File {files[0]} does not exist.")
+            return files[0]
+        elif Path(file_input).exists():
+            return Path(file_input)
+        elif isinstance(file_input, str):
+            return file_input
+        else:
+            raise ValueError(f"Please provide {ext} template.")
+
     def scaffold(self, create_all: bool) -> None:
         """Create the project structure.
 
@@ -440,25 +473,11 @@ class SimBuilder:
             print("Ocean is already defined. It will be used to run simulations")
             return
 
-        if command is None:
-            command_files = files_find_ext("command", self.project_path)
-            if not command_files:
-                raise ValueError(
-                    "Please provide a simulator command or a file containing the script."
-                )
-            if Path(command_files[0]).exists():
-                raise ValueError("Simulator file {command_files[0]} does not exist.")
-            self.__cmd = command_files[0].read_text().replace("\n", " ")
-
-        elif Path(command).exists():
-            with open(command, "r") as cmd_fd:
-                lines = [l.strip() for l in cmd_fd.readlines()]
-                self.__cmd = " ".join(lines)
-
-        elif isinstance(command, str):
-            self.__cmd = command
+        cmd = self.__get_file_input("command", command)
+        if isinstance(cmd, str):
+            self.__cmd = cmd
         else:
-            raise ValueError(f"Please provide simulator command.")
+            self.__cmd = cmd.read_text().replace("\n", " ")
 
     def load_parameters(self, parameters: List[Parameter] | str | Path) -> None:
         """Load parameters that are already created.
@@ -501,25 +520,13 @@ class SimBuilder:
         Returns:
             None
         """
-        if params_path is None:
-            params_files = files_find_ext("params", self.project_path)
-            if not params_files:
-                raise ValueError("Parameters template file does not exist.")
-            if not Path(params_files[0]).exists():
-                raise ValueError("Parameters file {params_files[0]} does not exist.")
-            params_file = params_files[0]
-        elif Path(params_path).exists():
-            params_file = params_path
-        elif isinstance(params_path, str):
-            params_file = params_path
-        else:
-            raise ValueError(f"Please provide parameters.")
+        params = self.__get_file_input("params", params_path)
 
         self.__is_parametric = True
-        self.__params_def = params_parse(params_file)
+        self.__params_def = params_parse(params)
         self.__params = None
 
-    def with_sweeps(self, sweeps_path: Path = None, n_repeats: int = 0) -> None:
+    def with_sweeps(self, sweeps_path: Path = None, n_repeats: int = 1) -> None:
         """Assign the sweeps definitions.
 
         By default, sweeps are read from `project_path/project.sweeps`.
@@ -536,22 +543,9 @@ class SimBuilder:
             None
         """
 
-        if sweeps_path is None:
-            sweeps_files = files_find_ext("sweeps", self.project_path)
-            if not sweeps_files:
-                raise ValueError("Sweeps template file does not exist.")
-            if not Path(sweeps_files[0]).exists():
-                raise ValueError("Sweeps file {sweeps_files[0]} does not exist.")
-            sweeps_file = sweeps_files[0]
-        elif Path(sweeps_path).exists():
-            params_file = sweeps_path
-        elif isinstance(sweeps_path, str):
-            sweeps_file = sweeps_path
-        else:
-            raise ValueError(f"Please provide sweeps.")
-
+        sweeps = self.__get_file_input("sweeps", sweeps_path)
         self.__is_sweeps = True
-        self.__sweeps_def = params_parse(sweeps_file)
+        self.__sweeps_def = params_parse(sweeps)
         self.__sweeps = sweeps_generate(self.__sweeps_def, self.__custom_fns, n_repeats)
 
     def with_ocean(
@@ -575,19 +569,7 @@ class SimBuilder:
             self.__cadence_project, "spectre/schematic/netlist/netlist"
         ).resolve()
 
-        if ocean_script is None:
-            ocean_files = files_find_ext("ocn", self.project_path)
-            if not ocean_files:
-                raise ValueError("Ocean script file does not exist.")
-            if not Path(ocean_files[0]).exists():
-                raise ValueError("Ocean script {ocean_files[0]} does not exist.")
-            self.__ocean_script = ocean_files[0]
-        elif Path(ocean_script).exists():
-            self.__ocean_script = ocean_script
-        elif isinstance(ocean_script, str):
-            self.__ocean_script = ocean_script
-        else:
-            raise ValueError(f"Please provide sweeps.")
+        ocean = self.__get_file_input("ocn", ocean_script)
 
         self.__ocean_out = Path(self.project_path, f"ocn_{self.project_name}")
         self.__cmd = f"sh -c 'ocean -nograph < {self.__ocean_out}'"

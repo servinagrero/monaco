@@ -17,14 +17,11 @@ Python 3.X is required to run the script. It works entirely with the standard li
 
 Sphinx is needed to build the documentation.
 
-# Usage
+# Motivation
 
 This project started as a way to ease the process of generating parametrics simulations to overcome the limitations of Cadence, mainly the generation of Monte Carlo simulations with great number of parameters while also lacking the statistics model files.
 
-The main pipeline of the framework is the following:
-
-Netlist -> Subs(Netlist, [Ocean], Parameters, Sweeps, Props) -> Simulator(Output) -> Results
-
+# Usage
 
 ## Scaffolding
 
@@ -49,8 +46,8 @@ For the configuration of the simulations, we can point the SimBuilder to our fil
 As explained before, the parameters and sweeps are read from files. The syntax to define parameters is the following:
 
 ```text
-# param name arg1 arg2 ... argN
 # This is a comment
+# param name arg1 arg2 ... argN
 
 temp uniform 25 30
 width normalvariate 50 3
@@ -67,10 +64,6 @@ CUSTOM_FUNCTIONS = {
 sim = SimBuilder(project_path)
 sim.with_custom_fns(CUSTOM_FUNCTIONS)
 ```
-
-### WIP
-
-Generation of sweeps
 
 # Substitution mechanism
 
@@ -110,24 +103,44 @@ print(sim)
 # Parametric: True
 # Has sweeps: False
 
-sim.with_parametric() # We select parametric analysis
-sim.with_sweeps() # And also sweep generation
+# Parameters can be read from default path
+sim.with_parametric()
+
+sweeps = '''
+temperature list 27 80
+'''
+sim.with_sweeps(sweeps) # Or provided directly
 
 params, sweeps = sim.run_single()
 results = pd.read_csv(results_path / 'freq.csv')
 # We can do what we want with the results
 
-# Since `SimBuilder.run_iterations` retuns an iterator, we can advace the iterations when we want:
+# Since `SimBuilder.run_iterations` retuns an iterator, 
+# we can advace the iterations when we want:
 simulations = sim.run_iterations(10)
 params, sweeps = next(simulations)
+
+# Moreover if `sim.is_verbose` is True,
+# the output of the simulator will be shown in stdout
 
 # Or with a for loop
 for params, sweeps in simulations:
     print("Iteration finished")
 
-# For advance usage, we can rely on Ocean to launch our simulations
-# Cadence_project points to the directory inside Cadence where the files are stored
+# In the case of using Cadence to run the simulations, 
+# we can rely on Ocean to launch our simulations. `Cadence_project` points 
+# to the directory inside Cadence where the files are stored
 sim.with_ocean(cadence_project)
+
+# If sweeps are enabled, the builder raises an error
+# when trying to run more simulations than sweeps available
+try:
+    params, sweeps = sim.run_single()
+except StopIteration:
+    print("No more sweeps to run")
+
+# To rerun simulations we have to reset sweeps
+# sim.with_sweeps(sweeps)
 ```
 
 ## License
@@ -141,3 +154,8 @@ Permission is hereby granted, free of charge, to any person obtaining a copy of 
 The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
 THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+<div align='center'>
+<a href="https://www.buymeacoffee.com/servinagrero"><img src="https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png" width="200px"></a>
+</div>
+
