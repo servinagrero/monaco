@@ -1,7 +1,7 @@
-Monaco
-======
+Template Parser
+===============
 
-.. automodule:: monaco
+.. automodule:: parser
    :members:
    :undoc-members:
    :show-inheritance:

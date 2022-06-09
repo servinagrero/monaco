@@ -1,27 +1,37 @@
 <div align='center'>
-<img src="./assets/logo.svg" width="300px">
-<h3>Python aided Monte Carlo and Parametric simulations in Cadence
+<img src="./docs/source/_static/logo.svg" width="300px">
+<h3>Python aided Monte Carlo and parametric simulations
 </h3>
 </div>
 
 
 # Introduction
 
-This script provides functionaly to perform MC and Parametric simulations using Cadence.
-
-This script was created to bypass the limitations of cadence and to allow for more flexibility when performing MC simulations.
+This script provides functionaly to perform Monte Carlo and complex parametric simulations. It is a loosely coupled framework in which the user defines how parameters are injected into a netlist and how it is simulated.
 
 # Dependencies
 
-Python 3.X is required to run the script. It works entirely with the standard library so there is no need to install any more dependencies.
+Python 3.X is required to run the script. It works entirely with the standard library so there is no need to install any dependencies.
 
 Sphinx is needed to build the documentation.
 
 # Motivation
 
-This project started as a way to ease the process of generating parametrics simulations to overcome the limitations of Cadence, mainly the generation of Monte Carlo simulations with great number of parameters while also lacking the statistics model files.
+This project started as a way to facitilate the process of performing complex parametric simulations in the Cadence Environment. Some of the electrical parametric simulations are so convoluted that the Cadence environment was unable to perform them. When the number of parameters gets too large of the process of generation is not defined in the environment, the solution was to generate the netlist by hand and simulate it directly.
+
+This framework tries to solve those problems by offering a set of utilities, defined in a clean and minimal syntax, that allow the generation of complex parametric simulations where the user has total control from the start to the end.
 
 # Usage
+
+For a more in detail documentation of the framework, please take a look at the documentation.
+
+To build the documentation:
+
+```shell
+$ git clone https://github.com/servinagrero/monaco.git
+$ cd monaco/docs
+$ make html
+```
 
 ## Scaffolding
 
@@ -37,7 +47,6 @@ For the configuration of the simulations, we can point the SimBuilder to our fil
 - `Parameters file`: /path/to/project/project.params
 - `Sweeps file`: /path/to/project/project.sweeps
 - `Simulation file`: /path/to/project/project.command
-- `Ocean script`: /path/to/project/project.ocn
 
 `Simulation file` accepts a file or a string with the command to execute
 
@@ -100,8 +109,14 @@ print(sim)
 # Project Path: /path/to/test_project
 # Results path: /path/to/test_project/results
 # Netlist: /path/to/test_project/test_project.netlist
+
+# If `sim.is_verbose` is True, it also prints
 # Parametric: True
 # Has sweeps: False
+# Command: Command defined in test_project.command
+
+# Moreover if `sim.is_verbose` is True,
+# the output of the simulator will be shown in stdout
 
 # Parameters can be read from default path
 sim.with_parametric()
@@ -112,25 +127,17 @@ temperature list 27 80
 sim.with_sweeps(sweeps) # Or provided directly
 
 params, sweeps = sim.run_single()
+# The analysis of the results depends on the user
 results = pd.read_csv(results_path / 'freq.csv')
-# We can do what we want with the results
 
 # Since `SimBuilder.run_iterations` retuns an iterator, 
 # we can advace the iterations when we want:
 simulations = sim.run_iterations(10)
 params, sweeps = next(simulations)
 
-# Moreover if `sim.is_verbose` is True,
-# the output of the simulator will be shown in stdout
-
 # Or with a for loop
 for params, sweeps in simulations:
     print("Iteration finished")
-
-# In the case of using Cadence to run the simulations, 
-# we can rely on Ocean to launch our simulations. `Cadence_project` points 
-# to the directory inside Cadence where the files are stored
-sim.with_ocean(cadence_project)
 
 # If sweeps are enabled, the builder raises an error
 # when trying to run more simulations than sweeps available
@@ -141,6 +148,15 @@ except StopIteration:
 
 # To rerun simulations we have to reset sweeps
 # sim.with_sweeps(sweeps)
+
+# The builder can also inject values into other files
+# The files are given in a dictionary with the format
+# Path to input : Path to output
+sim.with_files(
+    "/some/other/file": /foo/bar,
+    # The input `netlist` points to the netlist path
+    "netlist": /path/to/other/copy,
+)
 ```
 
 ## License
@@ -156,6 +172,6 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 <div align='center'>
-<a href="https://www.buymeacoffee.com/servinagrero"><img src="https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png" width="200px"></a>
+<a href="https://www.buymeacoffee.com/servinagrero"><img src="https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png" width="150px"></a>
 </div>
 
