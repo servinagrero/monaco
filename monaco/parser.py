@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
 
-# Lexer based on git from:
+# Lexer based on gist from:
 # Eli Bendersky (eliben@gmail.com)
 # This code is in the public domain
 # Last modified: August 2010
 
 
 import re
-import sys
 from pathlib import Path
-from typing import Union, List, Optional
+from typing import Union, List, Optional, Dict
 
 
 class Token(object):
@@ -30,12 +29,16 @@ class Token(object):
     def __repr__(self):
         return str(self)
 
-    def value(self) -> Union[str, int, bool]:
+    def value(self) -> Union[str, int, float, bool]:
         """Return the value of the token as the proper type.
 
         Returns:
             Casted value of the token.
         """
+        if self.type == "INT":
+            return int(self.val)
+        if self.type == "FLOAT":
+            return float(self.val)
         if self.type == "NUMBER":
             return int(self.val)
         if self.type == "TRUE":
@@ -60,7 +63,7 @@ class Parser:
         env: Dictionary containing values for the substitutions
     """
 
-    def __init__(self, buf: Union[str, Path], env: dict = None):
+    def __init__(self, buf: Union[str, Path], env: Optional[Dict] = None):
         """Create a parser.
 
         Args:
@@ -77,26 +80,29 @@ class Parser:
             (r"[\r\n]+", "NEWLINE"),
             (r"\s+", "SPACE"),
             (r"#+", "COMMENT"),
-            ("\d+", "NUMBER"),
+            (r"-?[0-9]+", "INT"),
+            ("-?[0-9]*\.[0-9]+", "FLOAT"),
             ("[Tt]rue", "TRUE"),
             ("[Ff]alse", "FALSE"),
             ("=", "EQUAL"),
-            ("\+", "PLUS"),
-            ("\-", "MINUS"),
-            ("\*", "MULT"),
-            ("\(", "LP"),
-            ("\)", "RP"),
-            ("\[", "LB"),
-            ("\]", "RB"),
+            (r"\+", "PLUS"),
+            (r"\-", "MINUS"),
+            (r"\*", "MULT"),
+            (r"\(", "LP"),
+            (r"\)", "RP"),
+            (r"\[", "LB"),
+            (r"\]", "RB"),
             (r"..define::", "DEFINE"),
             (r"..for::", "FOR"),
             (r"..undef::", "UNDEF"),
             (r"..if::", "IF"),
-            (r"..ifnot::", "IFNOT"),
+            (r"..unless::", "UNLESS"),
             (r"..else::", "ELSE"),
             (r"..end::", "END"),
             (r"..\w+::", "VAR"),
-            ("[a-zA-Z_0-9]+", "IDENTIFIER"),
+            ("[\"']+", "QUOTE"),
+            (r"\\", "NEWLINE_SEP"),
+            ("[a-zA-Z_0-9,/]+", "IDENTIFIER"),
         ]
         idx = 1
         regex_parts = []
@@ -137,7 +143,7 @@ class Parser:
         """Obtain all tokens from the buffer.
 
         Returns:
-            List of all tokens
+            List of all tokens.
         """
         tokens = []
         self.pos = 0
@@ -156,13 +162,13 @@ class Parser:
         """
         tokens = list(filter(lambda t: t.type != "SPACE", tokens))
         if tokens[0].type in ["TRUE", "FALSE"]:
-            return tokens[0].value()
+            return tokens[0].value() is True
         if tokens[0].type == "IDENTIFIER":
             return bool(self.env.get(tokens[0].value(), None))
         else:
             return bool(tokens[0].value())
 
-    def parse(self, tokens=None, iter_id=None) -> Optional[str]:
+    def parse(self, tokens=None, iter_id=None) -> str:
         """Parse tokens and execute the subsitution.
 
         Args:
@@ -209,11 +215,10 @@ class Parser:
                     result += self.parse(body, iter_id=i)
                 pos += 1
 
-            elif token.type in ["IF", "IFNOT"]:
+            elif token.type in ["IF", "UNLESS"]:
                 cond_type = token.type
                 cond = []
                 pos += 1
-
                 while tokens[pos].type != "NEWLINE":
                     cond.append(tokens[pos])
                     pos += 1
@@ -243,15 +248,15 @@ class Parser:
                         body[branch_sel].append(tokens[pos])
                     pos += 1
 
-                if cond_type == "IF":
-                    cond_res = self.__handle_cond(cond)
-                if cond_type == "IFNOT":
-                    cond_res = not self.__handle_cond(cond)
+                cond_res = self.__handle_cond(cond)
+                if cond_type == "UNLESS":
+                    cond_res = not cond_res
 
                 if cond_res:
                     res = self.parse(tokens=body[0])
                 else:
                     res = self.parse(tokens=body[1])
+
                 if res:
                     result += res
                 pos += 1
@@ -292,29 +297,22 @@ class Parser:
                     and tokens[pos + 1].type == "LB"
                     and tokens[pos + 3].type == "RB"
                 ):
-                    pos += 1
-                    idx = tokens[pos + 1].val  # Should be a number or ..it::
-                    if idx == "..it::" and iter_id is None:
-                        result += str(idx)
-                    elif idx == "..it::" and iter_id is not None:
-                        result += str(iter_id)
+                    idx = tokens[pos + 2].val
+                    if idx == "..it::":
+                        result += "..it::" if iter_id is None else str(iter_id)
                     else:
                         result += str(self.env.get(key[2:-2], key)[int(idx)])
-
-                    pos += 3
+                    pos += 4
                 else:
-                    if key == "..it::" and iter_id is None:
-                        result += str(idx)
-                    elif key == "..it::" and iter_id is not None:
-                        result += str(iter_id)
+                    if key == "..it::":
+                        result += "..it::" if iter_id is None else str(iter_id)
                     else:
                         result += str(self.env.get(key[2:-2], key))
-
                     pos += 1
-
             else:
-                result += token.val
+                result += str(token.val)
                 pos += 1
+
         return result
 
     def eval(self) -> str:
@@ -323,4 +321,5 @@ class Parser:
         Returns:
             Result of evaluating the template.
         """
-        return self.parse(self.tokenize())
+        tokens = self.tokenize()
+        return self.parse(tokens)

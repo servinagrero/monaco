@@ -5,11 +5,11 @@ import random
 import shlex
 import json
 from collections.abc import Iterator
-from os import PathLike
 from itertools import product
 from pathlib import Path
 from string import Template
 from subprocess import DEVNULL, run
+from .parser import Parser
 from typing import (
     Union,
     Callable,
@@ -19,7 +19,6 @@ from typing import (
     Tuple,
     Any,
     Optional,
-    TypedDict,
 )
 
 __version__ = "0.1.0"
@@ -31,7 +30,7 @@ __url__ = "https://github.com/servinagrero/monaco"
 # Type definitions
 ParameterVal = Union[int, float, str]
 FunctionDef = dict
-PathStr = PathLike[str]
+PathStr = Union[str, Path]
 ParameterDef = Dict[str, FunctionDef]
 Parameter = Dict[str, ParameterVal]
 
@@ -84,7 +83,7 @@ def params_generate(
     functions: Dict[str, Callable] = custom_fns if custom_fns else {}
     params: Parameter = {}
 
-    modules = [random]
+    modules: List[module] = [random]
     try:
         import numpy as np
 
@@ -254,10 +253,7 @@ def template_exec(input_txt: PathStr, out_file: PathStr, subs: Parameter) -> Non
         None
     """
     with open(out_file, "w+") as result:
-        if isinstance(input_txt, Path):
-            substituted = template_subs(input_txt.read_text(), subs)
-        else:
-            substituted = template_subs(input_txt, subs)
+        substituted = Parser(input_txt, subs).eval()
         result.write(substituted)
 
 
@@ -271,7 +267,7 @@ def command_run(cmd: PathStr, is_verbose: bool = False) -> None:
     Returns:
         None
     """
-    command: str = cmd.read_text() if isinstance(cmd, Path) else cmd
+    command: str = cmd if isinstance(cmd, str) else cmd.read_text()
 
     if is_verbose:
         run(shlex.split(command), check=True)
@@ -311,8 +307,9 @@ class SimBuilder:
         self.is_verbose = False
 
         self.__props: Dict[str, Any] = {}
-        self.__sweeps: Optional[Generator[Parameter, None, None]] = None
+        self.__sweeps_list: Optional[Generator[Parameter, None, None]] = None
         self.__params: Union[Generator[Parameter, None, None], List[Parameter]] = []
+        self.__params_list: List[Parameter] = []
 
     def __repr__(self) -> str:
         """Pretty print the SimBuiler"""
@@ -333,12 +330,14 @@ class SimBuilder:
 
             if self.__files:
                 txt = f"{txt}\nList of additional files:\n"
-                for in_file, out_file in self.__files:
-                    txt += f"{in_file}: {out_file}\n"
+                for in_file, out_file in self.__files.items():
+                    txt += f"{in_file} -> {out_file}\n"
+
+                return txt[:-1]  # Remove last newline char
 
         return txt
 
-    def __get_file_input(self, ext: str, file_input: PathStr) -> PathStr:
+    def __get_file_input(self, ext: str, file_input: Optional[PathStr]) -> PathStr:
         """Obtain an input from a default file, a supplied file or a string.
 
         The in put can be provided by a file path or a string. If no argument
@@ -400,8 +399,13 @@ class SimBuilder:
         self.__netlist = netlist_file
         self.__params_def = {}
         self.__sweeps_def = {}
-        self.__sweeps = None
+        self.__sweeps_list = None
         self.__params = []
+        self.__params_list = []
+
+    @property
+    def props(self) -> Dict:
+        return self.__props
 
     def with_props(self, props: Dict[str, Any], reset: bool = True) -> None:
         """Set the internal properties.
@@ -420,9 +424,6 @@ class SimBuilder:
 
     def with_netlist(self, netlist_path: Path) -> None:
         """Set the netlist to use.
-
-        If the method `with_simulator` is called first, then the netlist
-        points to the previous netlist.
 
         Args:
             netlist_path: Path to the netlist file.
@@ -451,8 +452,8 @@ class SimBuilder:
         else:
             self.__custom_fns.update(custom_fns)
 
-    def with_simulator(self, command: PathStr = None) -> None:
-        """Assign the simulatior command.
+    def with_command(self, command: Optional[PathStr] = None) -> None:
+        """Assign the command to execute.
 
         Args:
             command: String with the command to execute
@@ -463,9 +464,9 @@ class SimBuilder:
         if isinstance(cmd, str):
             self.__cmd = cmd
         else:
-            self.__cmd = cmd.read_text().replace("\n", " ")
+            self.__cmd = cmd.read_text()
 
-    def load_parameters(self, parameters: Union[List[Parameter], str, Path]) -> None:
+    def load_parameters(self, parameters: Union[List[Parameter], PathStr]) -> None:
         """Load parameters that are already created.
 
         Mainly used to repeat simulations with the same set of parameters.
@@ -486,17 +487,11 @@ class SimBuilder:
         elif isinstance(parameters, str):
             params = json.loads(parameters)
 
-        if self.__params_def.keys() != params[0].keys():
-            raise ValueError(
-                "Schema of parameters does not match with defined parameters."
-            )
-
+        self.__is_parametric = True
         self.__params = iter(params)
 
     def save_parameters(self, params_path: PathStr) -> None:
         """Save the parameters generated to a JSON file.
-
-        If the parameters have been loaded before, this function does nothing.
 
         Args:
             params_path: Path to the parameters file to be saved.
@@ -504,13 +499,10 @@ class SimBuilder:
         Returns:
             None
         """
-        if isinstance(self.__params, Iterator):
-            return
+        with open(params_path, "w+") as fd:
+            fd.write(json.dumps(self.__params_list))
 
-        with open(param_path, "w+") as fd:
-            fd.write(json.dumps(self.__params))
-
-    def with_parametric(self, params_path: Path = None) -> None:
+    def with_parametric(self, params_path: Optional[PathStr] = None) -> None:
         """Assign the paremeters definitions.
 
         By default, parameters are read from `project_path/project.params`.
@@ -528,8 +520,11 @@ class SimBuilder:
         self.__is_parametric = True
         self.__params_def = params_parse(params)
         self.__params = []
+        self.__params_list = []
 
-    def with_sweeps(self, sweeps_path: Path = None, n_repeats: int = 1) -> None:
+    def with_sweeps(
+        self, sweeps_path: Optional[PathStr] = None, n_repeats: int = 1
+    ) -> None:
         """Assign the sweeps definitions.
 
         By default, sweeps are read from `project_path/project.sweeps`.
@@ -549,7 +544,9 @@ class SimBuilder:
 
         self.__is_sweeps = True
         self.__sweeps_def = params_parse(sweeps)
-        self.__sweeps = sweeps_generate(self.__sweeps_def, self.__custom_fns, n_repeats)
+        self.__sweeps_list = sweeps_generate(
+            self.__sweeps_def, self.__custom_fns, n_repeats
+        )
 
     def with_files(self, files: dict, reset: bool = True) -> None:
         """Assign a list of files to inject values
@@ -597,19 +594,29 @@ class SimBuilder:
         Returns:
             Parameters and sweeps for the run
         """
-        if self.__cmd is None:
-            raise ValueError("Simulation command has not been defined")
-
         subs_dict: Parameter = {}
         if self.__is_parametric:
             if isinstance(self.__params, Iterator):
                 try:
                     params = next(self.__params)
+                    extra_keys = [
+                        key for key in params.keys() if key not in self.__params_def
+                    ]
+                    for key in extra_keys:
+                        del params[key]
+
+                    missing_params = {
+                        k: v for k, v in self.__params_def.items() if k not in params
+                    }
+                    if missing_params:
+                        remains = params_generate(missing_params, self.__custom_fns)
+                        params.update(remains)
+                    self.__params_list.append(params)
                 except StopIteration as e:
                     raise StopIteration("Can not run any more paremeters") from e
             else:
                 params = params_generate(self.__params_def, self.__custom_fns)
-                self.__params.append(params)
+                self.__params_list.append(params)
 
             subs_dict.update(params)
         else:
@@ -617,7 +624,7 @@ class SimBuilder:
 
         if self.__is_sweeps:
             try:
-                sweeps = next(self.__sweeps)
+                sweeps = next(self.__sweeps_list)
                 subs_dict.update(sweeps)
             except StopIteration as e:
                 raise StopIteration("Can not run any more sweeps") from e
@@ -635,20 +642,21 @@ class SimBuilder:
         if run_id is not None:
             subs_dict.update({"iteration": run_id})
 
-        for key, value in self.__props:
+        for key, value in self.__props.items():
             if key not in subs_dict:
                 subs_dict[key] = value
 
         template_exec(self.__netlist, self.__netlist_out, subs_dict)
 
-        for file_in, file_out in self.__files:
+        for file_in, file_out in self.__files.items():
             if file_in == "netlist":
                 template_exec(self.__netlist, str(file_out), subs_dict)
             else:
                 template_exec(str(file_in), str(file_out), subs_dict)
 
-        command = Template(self.__cmd).safe_substitute(subs_dict)
-        command_run(command, self.is_verbose)
+        if self.__cmd:
+            command = Parser(self.__cmd, subs_dict).eval()
+            command_run(command, self.is_verbose)
 
         return params, sweeps
 
