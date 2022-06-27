@@ -70,7 +70,7 @@ class Parser:
             buf: Text to be parsed or pointer to file.
             env: Dictionary containing values for substitutions.
         """
-        if isinstance(buf, Path):
+        if isinstance(buf, Path) or Path(buf).exists():
             self.buf = buf.read_text()
         else:
             self.buf = buf
@@ -104,7 +104,7 @@ class Parser:
             (r"..\w+::", "VAR"),
             ("[\"']+", "QUOTE"),
             (r"\\", "NEWLINE_SEP"),
-            ("[a-zA-Z_0-9,/]+", "IDENTIFIER"),
+            ("[a-zA-Z_0-9$&,:;?@'.^*%!/{}-]+", "IDENTIFIER"),
         ]
         idx = 1
         regex_parts = []

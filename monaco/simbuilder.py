@@ -110,6 +110,8 @@ def params_parse(params_def: PathStr) -> Optional[ParameterDef]:
 
     The parameters are defined in the following way:
 
+    ..code-block:: text
+    
        # This is a comment
        name function arg1 arg2 ... argN
        temp uniform 20 30
@@ -292,7 +294,7 @@ class SimBuilder:
         self.project_name = self.project_path.name
         self.results_path = self.project_path / "results"
 
-        self.__netlist: Path = self.project_path / f"{self.project_name}.netlist"
+        self.__netlist: Path = None
         self.__netlist_out: Path = self.project_path / f"{self.project_name}_net_out"
 
         self.__custom_fns: Dict[str, Callable] = {}
@@ -301,7 +303,7 @@ class SimBuilder:
         self.__params_def: ParameterDef = {}
         self.__sweeps_def: ParameterDef = {}
 
-        self.__files = {}
+        self.__files: Optional[Tuple[PathStr, PathStr]] = []
 
         self.__cmd: Optional[str] = None
         self.is_verbose = False
@@ -330,7 +332,7 @@ class SimBuilder:
 
             if self.__files:
                 txt = f"{txt}\nList of additional files:\n"
-                for in_file, out_file in self.__files.items():
+                for in_file, out_file in self.__files:
                     txt += f"{in_file} -> {out_file}\n"
 
                 return txt[:-1]  # Remove last newline char
@@ -422,15 +424,15 @@ class SimBuilder:
         else:
             self.__props.update(props)
 
-    def with_netlist(self, netlist_path: Path) -> None:
+    def with_netlist(self, netlist: PathStr) -> None:
         """Set the netlist to use.
 
         Args:
             netlist_path: Path to the netlist file.
         """
-        if not Path(netlist_path).exists():
-            raise ValueError(f"Netlist {netlist_path} does not exist")
-        self.__netlist = netlist_path
+        net = self.__get_file_input("netlist", netlist)
+
+        self.__netlist = net
 
     def with_custom_fns(
         self, custom_fns: Dict[str, Callable], reset: bool = True
@@ -489,6 +491,7 @@ class SimBuilder:
 
         self.__is_parametric = True
         self.__params = iter(params)
+        self.__params_list = []
 
     def save_parameters(self, params_path: PathStr) -> None:
         """Save the parameters generated to a JSON file.
@@ -548,7 +551,9 @@ class SimBuilder:
             self.__sweeps_def, self.__custom_fns, n_repeats
         )
 
-    def with_files(self, files: dict, reset: bool = True) -> None:
+    def with_files(
+        self, files: List[Tuple[PathStr, PathStr]], reset: bool = True
+    ) -> None:
         """Assign a list of files to inject values
 
         Args:
@@ -563,7 +568,7 @@ class SimBuilder:
         if reset:
             self.__files = files
         else:
-            self.__files.update(files)
+            self.__files.extend(files)
 
     def run_iterations(self, iterations: int) -> Generator:
         """Run a number of iterations.
@@ -646,13 +651,14 @@ class SimBuilder:
             if key not in subs_dict:
                 subs_dict[key] = value
 
-        template_exec(self.__netlist, self.__netlist_out, subs_dict)
+        if self.__netlist:
+            template_exec(self.__netlist, self.__netlist_out, subs_dict)
 
-        for file_in, file_out in self.__files.items():
-            if file_in == "netlist":
-                template_exec(self.__netlist, str(file_out), subs_dict)
+        for file_in, file_out in self.__files:
+            if file_in == "netlist" and self.__netlist:
+                template_exec(self.__netlist, file_out, subs_dict)
             else:
-                template_exec(str(file_in), str(file_out), subs_dict)
+                template_exec(file_in, file_out, subs_dict)
 
         if self.__cmd:
             command = Parser(self.__cmd, subs_dict).eval()
