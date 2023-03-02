@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   width="133.87515mm"
+   height="133.87515mm"
+   viewBox="0 0 133.87515 133.87515"
+   version="1.1"
+   id="svg5"
+   inkscape:version="1.2.2 (b0a8486541, 2022-12-01)"
+   sodipodi:docname="logo.svg"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns:xlink="http://www.w3.org/1999/xlink"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview7"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:document-units="mm"
+     showgrid="false"
+     inkscape:zoom="0.27653847"
+     inkscape:cx="-504.45061"
+     inkscape:cy="844.36715"
+     inkscape:window-width="1906"
+     inkscape:window-height="1039"
+     inkscape:window-x="5"
+     inkscape:window-y="5"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="layer1" />
+  <defs
+     id="defs2">
+    <inkscape:path-effect
+       effect="bspline"
+       id="path-effect8926"
+       is_visible="true"
+       lpeversion="1"
+       weight="33.333333"
+       steps="2"
+       helper_size="0"
+       apply_no_weight="true"
+       apply_with_weight="true"
+       only_selected="false" />
+    <inkscape:path-effect
+       effect="fillet_chamfer"
+       id="path-effect7370"
+       is_visible="true"
+       lpeversion="1"
+       nodesatellites_param="F,0,0,1,0,2.6458333,0,1 @ F,0,0,1,0,2.6458333,0,1 @ F,0,0,1,0,2.6458333,0,1"
+       unit="px"
+       method="auto"
+       mode="F"
+       radius="10"
+       chamfer_steps="1"
+       flexible="false"
+       use_knot_distance="true"
+       apply_no_radius="true"
+       apply_with_radius="true"
+       only_selected="false"
+       hide_knots="false" />
+    <linearGradient
+       inkscape:collect="always"
+       id="linearGradient3170">
+      <stop
+         style="stop-color:#c5d86d;stop-opacity:1;"
+         offset="0"
+         id="stop3166" />
+      <stop
+         style="stop-color:#1b998b;stop-opacity:1;"
+         offset="1"
+         id="stop3168" />
+    </linearGradient>
+    <linearGradient
+       inkscape:collect="always"
+       xlink:href="#linearGradient3170"
+       id="linearGradient3174"
+       x1="101.19682"
+       y1="85.810272"
+       x2="101.19683"
+       y2="219.68542"
+       gradientUnits="userSpaceOnUse" />
+    <inkscape:path-effect
+       effect="fillet_chamfer"
+       id="path-effect7370-3"
+       is_visible="true"
+       lpeversion="1"
+       nodesatellites_param="F,0,0,1,0,2.6458333,0,1 @ F,0,0,1,0,2.6458333,0,1 @ F,0,0,1,0,2.6458333,0,1"
+       unit="px"
+       method="auto"
+       mode="F"
+       radius="10"
+       chamfer_steps="1"
+       flexible="false"
+       use_knot_distance="true"
+       apply_no_radius="true"
+       apply_with_radius="true"
+       only_selected="false"
+       hide_knots="false" />
+    <inkscape:path-effect
+       effect="bspline"
+       id="path-effect8926-1"
+       is_visible="true"
+       lpeversion="1"
+       weight="33.333333"
+       steps="2"
+       helper_size="0"
+       apply_no_weight="true"
+       apply_with_weight="true"
+       only_selected="false" />
+  </defs>
+  <g
+     inkscape:label="Layer 1"
+     inkscape:groupmode="layer"
+     id="layer1"
+     transform="translate(-34.259251,-85.810272)">
+    <rect
+       style="fill:url(#linearGradient3174);fill-opacity:1;stroke-width:0.999999;stroke-linecap:square;stroke-linejoin:bevel;stroke-miterlimit:10;paint-order:markers fill stroke;stop-color:#000000;opacity:1"
+       id="rect234"
+       width="133.87515"
+       height="133.87515"
+       x="34.259251"
+       y="85.810272"
+       ry="6.4336104" />
+    <g
+       aria-label="m"
+       id="text1030-0"
+       style="font-size:122.65px;line-height:0em;font-family:Asap;-inkscape-font-specification:'Asap, Normal';fill:#ffffff;stroke-width:0.999997;stroke-linecap:square;stroke-linejoin:bevel;stroke-miterlimit:10;paint-order:markers fill stroke;stop-color:#000000">
+      <path
+         d="M 53.853926,184.02361 V 122.6986 h 8.5855 l 0.61325,9.5667 q 3.31155,-5.6419 8.5855,-8.21755 5.3966,-2.57565 11.0385,-2.57565 6.50045,0 12.265,2.9436 5.764554,2.9436 8.830804,9.0761 1.9624,-4.1701 5.51925,-6.74575 3.55685,-2.6983 7.72695,-3.9248 4.29275,-1.34915 8.0949,-1.34915 5.8872,0 11.16115,2.453 5.3966,2.453 8.8308,7.6043 3.4342,5.1513 3.4342,13.2462 v 39.24801 h -9.812 V 145.7568 q 0,-8.3402 -4.1701,-12.0197 -4.1701,-3.6795 -10.3026,-3.6795 -4.78335,0 -8.95345,2.33035 -4.1701,2.33035 -6.74575,6.8684 -2.453,4.53805 -2.453,11.16115 v 33.60611 H 96.290826 V 145.7568 q 0,-8.3402 -4.1701,-12.0197 -4.1701,-3.6795 -10.3026,-3.6795 -4.04745,0 -8.3402,2.2077 -4.1701,2.08505 -6.99105,6.74575 -2.82095,4.6607 -2.82095,12.265 v 32.74756 z"
+         style="font-family:'Work Sans';-inkscape-font-specification:'Work Sans, Normal'"
+         id="path7526-0" />
+    </g>
+  </g>
+</svg>
