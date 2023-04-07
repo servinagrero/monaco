@@ -1,0 +1,18 @@
+[package]
+name = "monaco"
+version = "0.1.0"
+edition = "2021"
+authors = ["Sergio Vinagrero <servinagrero@gmail.com>"]
+readme = "README.md"
+license = "MIT-0"
+documentation = "https://servinagrero.github.io/monaco"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+clap = { version = "4.1.13", features = ["derive"] }
+handlebars = "4.3.6"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0.94"
+serde_yaml = "0.9"
+toml = "0.7.3"
