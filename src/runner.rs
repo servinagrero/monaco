@@ -41,12 +41,12 @@ pub struct Runner<'a> {
 impl<'a> Runner<'static> {
     /// Create a new runner from a configuration
     /// A healthcheck of the configuration should be run before.
-    pub fn new(config: &'a Config) -> Self {
+    pub fn new(config: &'a Config, config_dir: &str) -> Self {
         let props = config.props.clone();
         let mut env = config.env.clone();
 
         if config.dotenv {
-            let dotenv = read_dotenv();
+            let dotenv = read_dotenv(config_dir);
             for (name, value) in dotenv.iter() {
                 env.insert(name.to_owned(), value.to_string());
             }
@@ -117,10 +117,6 @@ impl<'a> Runner<'static> {
             }
             StepLog::Filepath(out_template) => {
                 let out_path = self.resolve_path(&out_template);
-                // let out_body = self
-                //     .ctx
-                //     .render_template(&outpath, &serde_json::json!({"name": "Prueba"}))
-                //     .unwrap();
                 let out_file = std::fs::OpenOptions::new()
                     .append(true)
                     .create(true)
@@ -206,6 +202,7 @@ impl<'a> Runner<'static> {
 
         if let Some(iters) = &job.iters {
             match iters {
+                Iter::Inf(_) => println!("Job Inf"),
                 Iter::Values(lst) => println!("Job iterations: {lst:?}"),
                 Iter::Range { from, to, by } => {
                     println!("Job range: {:?}, {:?}, {:?}", from, to, by)

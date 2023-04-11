@@ -41,7 +41,12 @@ fn main() -> Result<(), ()> {
         exit(1);
     }
 
-    let mut runner = Runner::new(&config);
+    let config_path = std::fs::canonicalize(args.config)
+        .map_err(|err| eprintln!("Could not get path of config => {}", err))
+        .unwrap();
+    let config_dir = config_path.as_path().parent().unwrap().to_str().unwrap();
+
+    let mut runner = Runner::new(&config, &config_dir);
     runner.dry_mode = args.dry;
 
     if let Some(jobname) = args.job {

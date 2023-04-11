@@ -6,10 +6,15 @@ use std::collections::HashMap;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum Iter {
-    /// A range of values. By default starts at 0
+    /// Infinite loop
+    Inf(bool),
+
+    /// Range of values.
+    /// By default starts at 0
+    /// If step is not specified, it defaults to 1.
     Range {
         from: Option<u64>,
-        to: Option<u64>,
+        to: u64,
         by: Option<u64>,
     },
     /// List of values

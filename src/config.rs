@@ -71,7 +71,8 @@ impl Config {
                 Err(e) => Err(Box::new(e)),
             },
             _ => {
-                println!("Fileformat '{}' is not supported", hint);
+                println!("File format '{}' is not supported", hint);
+                println!("Available formats => yml, yaml, toml, json");
                 exit(1);
             }
         };
@@ -113,15 +114,15 @@ impl Config {
                     }
                 }
             }
-            if let Some(iters) = &job.iters {
-                if let Iter::Range { from, to, by: _ } = iters {
-                    if from.is_none() && to.is_none() {
-                        println!("Problem in job '{}'", job.name);
-                        println!("Range wasn't specified");
-                        return false;
-                    }
-                }
-            }
+            // if let Some(iters) = &job.iters {
+            //     if let Iter::Range { from, to: _, by: _ } = iters {
+            //         if from.is_none() {
+            //             println!("Problem in job '{}'", job.name);
+            //             println!("Range wasn't specified");
+            //             return false;
+            //         }
+            //     }
+            // }
             job.completed.set(false);
         }
 
@@ -130,14 +131,16 @@ impl Config {
 }
 
 /// Read a dotenv file for environment variables
-/// The file is read from the current directory
-pub fn read_dotenv() -> HashMap<String, String> {
+/// The file ".env" is read from the specified directory
+/// The lines should have the format `KEY=VALUE`
+pub fn read_dotenv(dir: &str) -> HashMap<String, String> {
     let mut env = HashMap::<String, String>::new();
 
-    match File::open(".env") {
+    let env_path = Path::new(dir).join(".env");
+    match File::open(&env_path) {
         Ok(fp) => {
             let reader = BufReader::new(fp);
-            for line in reader.lines() {
+            for (line_id, line) in reader.lines().enumerate() {
                 let line = line.unwrap();
                 if line == "" {
                     continue;
@@ -146,12 +149,12 @@ pub fn read_dotenv() -> HashMap<String, String> {
                     Some((key, value)) => {
                         env.insert(key.to_string(), value.to_string());
                     }
-                    None => println!("Malformed line in .env => {}", line),
+                    None => println!("Malformed line {} in .env => {line}", line_id + 1),
                 }
             }
         }
         Err(e) => {
-            println!("Could not read .env => {}", e);
+            println!("Could not read {} => {e}", env_path.to_string_lossy());
         }
     }
     return env;
