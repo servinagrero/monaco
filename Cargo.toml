@@ -9,7 +9,16 @@ documentation = "https://servinagrero.github.io/monaco"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[lib]
+name = "monaco"
+path = "src/lib/lib.rs"
+
+[[bin]]
+name = "monaco"
+path = "src/bin.rs"
+
 [dependencies]
+anyhow = "1.0.70"
 clap = { version = "4.1.13", features = ["derive"] }
 handlebars = "4.3.6"
 serde = { version = "1.0", features = ["derive"] }
