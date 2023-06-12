@@ -265,6 +265,19 @@ impl<'a> Runner<'static> {
         return true;
     }
 
+    pub fn exec_templates(&'a self, job: &'a Job, data: &TemplateData) -> bool {
+        if let Some(templates) = &job.templates {
+            for template in templates.iter() {
+                let (in_path, out_path) = Job::resolve_template(template).unwrap();
+                let status = self.render_template(in_path, out_path, &data);
+                if status.is_err() && job.ignore_errors == true {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
     /// Run a single job
     pub fn run_job(&'a self, job: &'a Job, template_data: Option<&mut TemplateData>) -> bool {
         let mut default_data = TemplateData::default();
@@ -321,21 +334,12 @@ impl<'a> Runner<'static> {
             return true;
         }
 
-        if let Some(templates) = &job.templates {
-            for template in templates.iter() {
-                let (in_path, out_path) = Job::resolve_template(template).unwrap();
-                let status = self.render_template(in_path, out_path, &data);
-                if status.is_err() && job.ignore_errors == true {
-                    return false;
-                }
-            }
-        }
-
         match &job.iters {
             Iteration::File(path) => {
                 let iters = deserialize_file::<Vec<serde_json::Value>>(path).unwrap();
                 for iter in iters {
-                    data.iter = Some(iter);
+                    data.iter = Some(serde_json::json!(iter));
+                    self.exec_templates(&job, &data);
                     self.run_steps(&job, &mut data);
                 }
             }
@@ -345,6 +349,7 @@ impl<'a> Runner<'static> {
                 if *is_loop {
                     loop {
                         data.iter = Some(serde_json::json!(iter));
+                        self.exec_templates(&job, &data);
                         self.run_steps(&job, &mut data);
                         iter += 1;
                     }
@@ -355,6 +360,7 @@ impl<'a> Runner<'static> {
             Iteration::Values(values) => {
                 for iter in values {
                     data.iter = Some(serde_json::json!(iter));
+                    self.exec_templates(&job, &data);
                     self.run_steps(&job, &mut data);
                 }
             }
@@ -364,6 +370,7 @@ impl<'a> Runner<'static> {
                 let mut counter = start;
                 while counter < *end {
                     data.iter = Some(serde_json::json!(counter));
+                    self.exec_templates(&job, &data);
                     self.run_steps(&job, &mut data);
                     counter += step;
                 }
