@@ -156,6 +156,9 @@ pub struct Job {
     /// The job was already completed and shouldn't be executed again
     #[serde(skip)]
     pub completed: Arc<Mutex<bool>>,
+
+    /// Message to print when executing a job
+    pub message: Option<String>,
 }
 
 impl Job {

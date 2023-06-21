@@ -339,6 +339,10 @@ impl<'a> Runner<'static> {
                 let iters = deserialize_file::<Vec<serde_json::Value>>(path).unwrap();
                 for iter in iters {
                     data.iter = Some(serde_json::json!(iter));
+                    if let Some(raw_msg) = &job.message {
+                        let msg = self.ctx.render_template(raw_msg, &data).unwrap();
+                        println!("{}", msg);
+                    };
                     self.exec_templates(&job, &data);
                     self.run_steps(&job, &mut data);
                 }
@@ -349,6 +353,10 @@ impl<'a> Runner<'static> {
                 if *is_loop {
                     loop {
                         data.iter = Some(serde_json::json!(iter));
+                        if let Some(raw_msg) = &job.message {
+                            let msg = self.ctx.render_template(raw_msg, &data).unwrap();
+                            println!("{}", msg);
+                        };
                         self.exec_templates(&job, &data);
                         self.run_steps(&job, &mut data);
                         iter += 1;
@@ -360,6 +368,10 @@ impl<'a> Runner<'static> {
             Iteration::Values(values) => {
                 for iter in values {
                     data.iter = Some(serde_json::json!(iter));
+                    if let Some(raw_msg) = &job.message {
+                        let msg = self.ctx.render_template(raw_msg, &data).unwrap();
+                        println!("{}", msg);
+                    };
                     self.exec_templates(&job, &data);
                     self.run_steps(&job, &mut data);
                 }
@@ -370,6 +382,10 @@ impl<'a> Runner<'static> {
                 let mut counter = start;
                 while counter < *end {
                     data.iter = Some(serde_json::json!(counter));
+                    if let Some(raw_msg) = &job.message {
+                        let msg = self.ctx.render_template(raw_msg, &data).unwrap();
+                        println!("{}", msg);
+                    };
                     self.exec_templates(&job, &data);
                     self.run_steps(&job, &mut data);
                     counter += step;
