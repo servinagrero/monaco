@@ -1,66 +1,99 @@
-# Creating a job
+# Usage
 
-Monaco works by reading jobs from a config file and executing them. The configuration files can be written in [YAML](https://yaml.org/), [TOML](https://toml.io/en/) and [JSON](https://www.json.org/json-en.html) format.
+When reading a configuration, monaco will make some healthchecks. Among other things, monaco will check for the following requirements in every job:
 
-```yaml title="Basic config file"
-jobs:
-  Hello:
-    steps: 
-      - echo "hello world"
-```
-
-All the jobs defined in a config file are intended to be project specific. To execute a config file, the following command is used.
-
-```bash
-$ monaco -c /path/to/config.yaml
-```
+- The job dependencies exist.
+- Template paths are not malformed.
+- The iterations file is readable and contains a list of iterations.
+- The ranges on the iterations are not malformed.
 
 ## Executing commands
 
-Commands can be executed like scripts by using the `commands` key. This accepts a lists of commands that will be executed with ``/bin/sh`. The `|` operator can be used in YAML to treate a block of text as different lines. When multiple jobs are defined, they will be executed in the order they are defined.
+Commands are defined as short strings that get executed like shell commands. On windows they are executed with `cmd` while on linux they are executed with `/bin/sh`. The commands will be executed in the order they are defined. Each command gets executed in a different process, so the different commands cannot communicate between them directly.
 
-Each command gets executed in a different process, so the different commands cannot communicate between them directly.
 
-```yaml
+```yaml title="Basic config file"
 jobs:
-  FirstJob:
-    steps:
-      - echo "This job will be first one"
-
-  SecondJob:
+  - name: Hello
     steps: 
-      - |
-        echo "This job will be the second one"
-        echo "And so on..."
+      - echo "hello world"
+  - name: Another
+    steps:
+      - echo "Hello from another"
 
 # Would result in the output
-# This job will be the first one
-# This job will be the second one
-# And so on...
+# hello world
+# Hello from another
 ```
 
-We can select which job we want to execute by passing the `-n` parameter. In the following example only the job FirstJob will be executed.
+We can also executed other jobs instead of shell commands by provididing the job name as map. Moreover, we can temporarely update the props and environment of the job if the `props` and `env` keys are also supplied.
 
-```bash
-$ monaco -c /path/to/config.yaml -n FirstJob
+```yaml title="Job calling another job"
+jobs:
+  - name: First
+    steps: 
+      - job: Second
+  - name: Second
+    steps:
+      - echo "Hello from Second"
+
+# Would result in the output
+# Hello from Second
 ```
 
+Note that when a job has executed all of its commands, it gets marked as completed and it won't be executed again, even after successive calls, as depicted here.
 
-## Iterative commands
+```yaml title="Job calling another job"
+jobs:
+  - name: First
+    steps: 
+      - job: Second
+      - job: Second
+  - name: Second
+    steps:
+      - echo "Hello from Second"
 
-A command can be executed multiple times by providing the `iter` variable. This variable can have the following values:
+# Would result in the output
+# Hello from Second
+```
 
-- A list of iterations.
-- A map containing the key `to` and the optional key `from`.
+Monaco offers a couple of tools to address the number of times a job is able to be executed. The number of times a job is allowed to executed is controlled through the iterations configuration. There is also the when functionality that allows us to determine whether a job should run or not even if there are iterations.
 
-When executing multiple iterations, the iteration index can be accesed through the `Iteration` template variable.
+
+## Iterations
+
+So far we have seen that we can launch jobs and execute commands. The problem is that these commands get executed only once. Monaco allows performing _iterations_ on every job. There are multiple ways to define iterations:
+
+- An absolute path to a JSON file containing an array.
+- A boolean value to indicate whether the job will be executed once or in an infinite loop.
+- A range of numbers provided with the keys `from`, `to` and an optional step with the key `by`.
+- A list of values directly in the configuration file.
+
+As long as the iterations are contained in a list, we are able to utilize not only numbers, but complex objects as iterations, as it will be shown.  When executing multiple iterations, the iteration index can be accesed through the `iter` template variable.
+
+### Infinite loop
+
+```yaml title="Example of an infinite loop"
+jobs:
+  - name: Test
+    iters: true # If false, only once iteration. It is the default behaviour
+    steps:
+      - echo "Infinite loop"
+
+# Would result in the output
+# Infinite loop
+# Infinite loop
+# ...
+```
+
+### Iteration list
 
 ```yaml title="Example of an iteration list"
 jobs:
-  Test:
+  - name: Test
     iters: [1, 3, 5, 42]
     steps:
-      - echo "We are on iteration {{.Iteration}}"
+      - echo "We are on iteration {{iter}}"
 
 # Would result in the output
 # We are on iteration 1
@@ -69,14 +102,17 @@ jobs:
 # We are on iteration 42
 ```
 
-```yaml title="Example of an iteration map"
+### Range of values
+
+```yaml title="Example of range iteration"
 jobs:
   Test:
     iters:
       # from: 0 If from is not specified it defaults to 0
       end: 5
+      # by: 1 The step defaults to 1
     steps:
-      - echo "We are on iteration {{.Iteration}}"
+      - echo "We are on iteration {{iter}}"
 
 # Would result in the output
 # We are on iteration 0
@@ -86,68 +122,137 @@ jobs:
 # We are on iteration 4
 ```
 
-When supplying a list of iterations, we are not limited to numbers. Strings are also supported
+### Iterations from JSON file
 
-```yaml
-jobs:
-    - name: Test
-      iters: ["first", "second"]
-      steps: |
-        echo "We are on iteration {{.Iteration}}"
-
-# Would result in the output
-# We are on iteration first
-# We are on iteration second
+```json title="iterations.json"
+[{"letter": "A", "idx": 1}, {"letter": "B", "idx": 2}]
 ```
 
-## Properties
+```yaml title="Example on iterations from JSON file"
+jobs:
+    - name: Test
+      iters: "iterations.json"
+      steps:
+        - echo "Letter {{iter.letter}} and index {{iter.idx}}"
 
-Custom properties can be passed to a job with the `props` key. The will be accesible in the templates through the `Props` template variable. The `{{}}` syntax is specific to Go templates. For more information, see below the [templates documentation](#working-with-templates)
+# Would result in the output
+# Letter A and index 1
+# Letter B and index 2
+```
+
+## Variable interpolation
+
+Monaco provides two mechanisms that allow variable interpolation.
+
+- Through the shell environment.
+- Through [mustache]() templates.
+
+### Shell environment
 
 ```yaml
 jobs:
-  Test:
-    props:
-      answer: 42
+  - name: Test
+    env:
+      ANSWER: 42
     steps:
-      - echo "The answer is {{.Props.answer}}"
+      - echo "the answer is $ANSWER"
+
 # Would result in the output
 # The answer is 42
+```
+
+The environment can be also updated on a global basis if the `env` key is defined in the top level of the configuration. Each job is then free to override the variable if they are defined in their own scope.
+
+```yaml
+env:
+  foo: bar
+
+jobs:
+  - name: First
+    steps:
+      - echo "Here foo is $foo"
+  - name: Second
+    env:
+      foo: 42
+    steps:
+      - echo "but here is $foo"
+
+# Would result in the output
+# Here foo is bar
+# but here is 42
+```
+
+In the case that we want to keep some variables secret, we can provide `dotenv: true`. In this case, monaco will read the file `.env` from the configuration directory and put them in the global environment. The `.env` file is a simple text file where each line has the format `KEY=VALUE`. If the option is enabled but the `.env` file is not readable, monaco will print a warning
+
+```text title="Example of .env"
+PASS=1234
+```
+
+```yaml title="Reading dotenv"
+dotenv: true
+
+jobs:
+  - name: Test
+    steps:
+      - echo "The password is $PASS"
+
+# Would result in the output
+# The password is 1234
 ```
 
 The properties can be defined globally for all jobs if the `props` key is moved to the global scope. However, each job can override them if they are defined in their own scope.
 
 ```yaml
-props:
-  answer: 42
+env:
+  foo: bar
 
 jobs:
-  First:
+  - name: First
     steps:
-      - echo "Here the answer is {{.Props.answer}}
-  Second:
-    props:
-      answer: different
+      - echo "Here foo is $foo"
+  - name: Second
+    env:
+      foo: 42
     steps:
-      - echo "But here is {{.Props.answer}}"
+      - echo "but here is $foo"
 
 # Would result in the output
-# Here the answer is 42
-# But here is different
+# Here foo is bar
+# but here is 42
 ```
 
-### Loading secrets
+### Templates
 
-Sometimes it's desirable to load up properties that we don't want to share or commit to github. The option `secrets` allows doing that. This file has the same format as the .env file.
 
-```yaml
-secrets: "./path/to/secrets"
+## Redirecting output
+
+The outpt of all steps in a job can be redirected easily through the `log` variable. There are three possible values:
+
+- If true is provided, the output will be redirected to standard out. This is the default behaviour.
+- If fals is provided, no output will be emitted.
+- If a string is provided, it will be treated as a template pointing to the path where the output will be apended. This file is recalculated for every iteration.
+
+
+As with most options, the log output can be set on a global basis and each job can override the value.
+
+```yaml title="Redirecting output"
+log: false
 
 jobs:
-  SecretJob:
+  - name: First
+    dir: /tmp
+    log: "{{dir}}/output.log"
     steps:
-      - echo "The anwser is {{.Props.TOP_SECRET}}
+      - echo "This will be in the file"
+  - name: Second
+    steps:
+      - echo "This won't be seen"
 ```
+
+```text title="/tmp/output.log"
+This will be in the file
+```
+
 
 ## Job dependencies
 
@@ -171,84 +276,93 @@ jobs:
 # And at last, this job
 ```
 
-## Environment variables
+## Chaning directory
 
-Similarly to properties, environment variables for all jobs if the `env` key is moved to the global scope. Each job can override them if they are defined in their own scope.
+The directory of execution can be changed on a job basis by providing the `dir` key. The current directory can be used with the shell variable or through the template variable `dir`. If no directory is provided, it defaults to the configuration directory. The configuration directory can also be accessed through the template variable `config_dir`.
 
-```yaml
-env:
-  CUSTOMVAR: 42
-
+```yaml title="Changing execution directory"
 jobs:
-  First:
+  - name: Test
+    dir: /tmp
     steps:
-      - echo "The answer is $CUSTOMVAR"
-  Second:
-    env:
-      CUSTOMVAR: -1
-    steps:
-      - echo "But here is $CUSTOMVAR"
+      - echo "We are in $PWD"
+      - echo "The same as {{dir}}"
+      - echo "The config is on {{config_dir}}"
 
 # Would result in the output
-# The answer is 42
-# But here is -1
+# We are in /tmp
+# The same as /tmp
+# The config is on /path/to/config_dir
 ```
 
-## Custom directory
+## Errors during execution
 
-The directory where the command will be executed can be changed with the `dir` variable. The directory can be accessed also with the `Dir` template variable. If it's not specified, it defaults to the directory where the tool is executed. The path to the config file can be accesed also with the `ConfigFile` template variable.
+During the execution of multiple steps of a job, something could go wrong. If one of the commands fail to execute, monaco will not execute the rest of the steps. To ignore errors, provide the `ignore_errors: true` on a job basis. 
 
-```yaml
+```yaml title="Errors during execution"
 jobs:
-  First:
-    dir: /path/to/dir
-    steps:
-      - |
-      echo "We are on $PWD"
-      echo "It's the same as {{.Dir}}"
+  - name: Test
+    steps: 
+      - echo "You will see this"
+      - false
+      - echo "But you won't see this"
 
 # Would result in the output
-# We are on /path/to/dir
-# Its the same as /path/to/dir
+# You will see this
+```
+
+```yaml title="Ignoring errors"
+jobs:
+  - name: Test
+    ignore_errors: true
+    steps: 
+      - echo "You will see this"
+      - false
+      - echo "And this too"
+
+# Would result in the output
+# You will see this
+# And this too
 ```
 
 ## Conditional execution
 
-## Working with templates
+By default every job will be executed once. Once its execution has finished (either with errors or without errors), it will be marked as completed. In the case where a job has some iterations, all iterations will be executed.
 
-This tool relies on Go templates. For more information about them, please refer to the [official documentation](https://pkg.go.dev/text/template).
+```yaml title="Job is executed once"
+jobs:
+  - name: Parent
+    iters: [1, 2, 3]
+    steps: 
+      - job: Child
+    
+  - name: Child
+    steps:
+      - echo "This is executed only once"
 
-This framework provides some functions that can be accesible from the templates. All the functions from the [sprig library](https://masterminds.github.io/sprig/lists.html) are available.
-
-### loadData
-
-Allows loading data from a source file. It reads data from YAML, TOML, JSON and CSV.
-
-
-```text title="data.csv"
-a,b,c
-1,2,3
-4,5,6
+# Would result in the output
+# This is executed only once
 ```
 
-```text
-{{ $data := loadData "data.csv" }}
+However, we can provide the `when` parameter to a job to check when a job should run. This parameter accepts a list of shell commands that will be executed in order. If all of the commands exit without errors, the job will be run. Since this option has precedence over the completed marker, we can launch the same job as many times as needed.
 
-{{ range $column, $values := $data }}
-Column: {{$column}}
-Values: {{$Values}}
----
-{{end}}
-```
+For example, in order to always launch a job, we can use the `true` command as follows:
 
-```text
-Column: a
-Values: [1, 4]
----
-Column: b
-Values: [2, 5]
----
-Column: c
-Values: [3, 6]
----
+```yaml title="Conditional execution"
+jobs:
+  - name: Parent
+    iters: [1, 2, 3]
+    steps: 
+      - job: Child
+    
+  - name: Child
+    steps:
+      - echo "over and over"
+    when:
+      - true
+
+# Would result in the output
+# over and over
+# over and over
+# over and over
 ```
