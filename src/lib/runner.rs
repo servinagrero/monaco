@@ -1,15 +1,15 @@
 //! Run the jobs
 
 use crate::job::*;
-use anyhow::{Context, Result};
+use anyhow::Result;
 use serde::Serialize;
+use serde_json::Value;
 use std::collections::HashMap;
-use std::path::Path;
 use std::process::{Command, Stdio};
 
 use handlebars::Handlebars;
 
-use crate::config::{Config, PropMap, StrMap};
+use crate::config::Config;
 use crate::job::Iteration;
 use crate::utils::*;
 
@@ -25,17 +25,17 @@ pub struct TemplateData {
     pub dir: Option<String>,
 
     /// Current iteration
-    pub iter: Option<serde_json::Value>,
+    pub iter: Option<Value>,
 
     /// If executing in parallel, the thread index
     /// If executing sequentially, default to 0
     pub thread: i32,
 
     /// Shell environment
-    pub env: StrMap,
+    pub env: HashMap<String, String>,
 
     /// Properties
-    pub props: PropMap,
+    pub props: HashMap<String, Value>,
 }
 
 /// The Runner is in charge of running all jobs
@@ -45,7 +45,7 @@ pub struct Runner<'a> {
     pub env: HashMap<String, String>,
 
     /// Global properties
-    pub props: HashMap<String, serde_yaml::Value>,
+    pub props: HashMap<String, Value>,
 
     /// List of jobs to execute
     pub jobs: Vec<Job>,
@@ -67,47 +67,6 @@ impl<'a> Runner<'static> {
     /// Create a new runner from a configuration
     /// A healthcheck of the configuration should be run before.
     pub fn from_config(config: &'a Config) -> Result<Self> {
-        let mut props = config.props.clone();
-        let mut env = config.env.clone();
-
-        let config_dir = std::path::Path::new(&config.path)
-            .parent()
-            .unwrap()
-            .to_str()
-            .unwrap();
-
-        if config.dotenv {
-            let env_path = Path::new(&config_dir)
-                .join(".env")
-                .into_os_string()
-                .into_string()
-                .unwrap();
-            match read_dotenv(&env_path) {
-                Ok(map) => {
-                    for (k, v) in map {
-                        env.insert(k, v);
-                    }
-                }
-                Err(e) => {
-                    return Err(e);
-                }
-            }
-        }
-
-        if let Some(s) = &config.props_file {
-            let props_path = std::fs::canonicalize(s)
-                .unwrap()
-                .into_os_string()
-                .into_string()
-                .unwrap();
-            match deserialize_file::<PropMap>(&props_path) {
-                Ok(map) => {
-                    props.extend(map.iter().map(|(k, v)| (k.to_string(), v.to_owned())));
-                }
-                Err(e) => return Err(e).context("Problem reading props file"),
-            }
-        }
-
         let log = match &config.log {
             Some(output) => output.clone(),
             None => LogOutput::default(),
@@ -115,9 +74,9 @@ impl<'a> Runner<'static> {
 
         Ok(Runner {
             jobs: config.jobs.clone(),
-            config_dir: String::from(config_dir),
-            env,
-            props,
+            config_dir: config.dir(),
+            env: config.env.clone(),
+            props: config.props.clone(),
             dry_mode: false,
             ctx: Handlebars::new(),
             log,
@@ -125,6 +84,8 @@ impl<'a> Runner<'static> {
     }
 
     /// Render a template
+    ///
+    /// Automatically creates directories for the output path
     pub fn render_template(
         &self,
         input_path: &str,
@@ -135,9 +96,15 @@ impl<'a> Runner<'static> {
         let input_path = resolve_path(input_path);
         let output_path = resolve_path(output_path);
 
+        let input_str = std::fs::read_to_string(&input_path)?;
+
+        let path = std::path::Path::new(&output_path);
+        let prefix = path.parent().unwrap();
+        std::fs::create_dir_all(prefix)?;
+
+        let fp = std::fs::File::create(&output_path)?;
+
         println!("Executing template {} => {}", input_path, output_path);
-        let input_str = std::fs::read_to_string(input_path)?;
-        let fp = std::fs::File::create(output_path)?;
         self.ctx.render_template_to_write(&input_str, &data, fp)?;
         Ok(())
     }
@@ -224,12 +191,18 @@ impl<'a> Runner<'static> {
     /// Otherwise, return true if the job has not ben run
     pub fn job_should_run(&self, job: &Job, data: &TemplateData) -> bool {
         if let Some(conds) = &job.when {
-            return conds
+            // return conds
+            //     .iter()
+            //     .map(|cmd| self.exec_command(cmd, &data, &job.log))
+            //     .all(|c| c == true);
+
+            let res: Vec<bool> = conds
                 .iter()
                 .map(|cmd| self.exec_command(cmd, &data, &job.log))
-                .all(|c| c == true);
+                .collect();
+            println!("{:?}", res);
+            return res.iter().all(|c| *c == true);
         }
-
         let completed = job.completed.lock().unwrap();
         return !*completed;
     }
@@ -265,14 +238,13 @@ impl<'a> Runner<'static> {
         return true;
     }
 
-    pub fn exec_templates(&'a self, job: &'a Job, data: &TemplateData) -> bool {
-        if let Some(templates) = &job.templates {
-            for template in templates.iter() {
-                let (in_path, out_path) = Job::resolve_template(template).unwrap();
-                let status = self.render_template(in_path, out_path, &data);
-                if status.is_err() && job.ignore_errors == true {
-                    return false;
-                }
+    pub fn exec_templates(&'a self, templates: &'a Vec<String>, data: &TemplateData) -> bool {
+        for template in templates.iter() {
+            let (in_path, out_path) = Job::resolve_template(template).unwrap();
+            let status = self.render_template(&in_path, &out_path, &data);
+            if status.is_err() {
+                println!("{:#?}", status);
+                return false;
             }
         }
         return true;
@@ -336,14 +308,19 @@ impl<'a> Runner<'static> {
 
         match &job.iters {
             Iteration::File(path) => {
-                let iters = deserialize_file::<Vec<serde_json::Value>>(path).unwrap();
+                let iters = deserialize_file::<Vec<Value>>(path).unwrap();
                 for iter in iters {
                     data.iter = Some(serde_json::json!(iter));
                     if let Some(raw_msg) = &job.message {
                         let msg = self.ctx.render_template(raw_msg, &data).unwrap();
                         println!("{}", msg);
                     };
-                    self.exec_templates(&job, &data);
+                    if let Some(templates) = &job.templates {
+                        let res = self.exec_templates(&templates, &data);
+                        if job.ignore_errors && !res {
+                            return false;
+                        }
+                    }
                     self.run_steps(&job, &mut data);
                 }
             }
@@ -357,7 +334,9 @@ impl<'a> Runner<'static> {
                             let msg = self.ctx.render_template(raw_msg, &data).unwrap();
                             println!("{}", msg);
                         };
-                        self.exec_templates(&job, &data);
+                        if let Some(templates) = &job.templates {
+                            self.exec_templates(&templates, &data);
+                        }
                         self.run_steps(&job, &mut data);
                         iter += 1;
                     }
@@ -372,7 +351,9 @@ impl<'a> Runner<'static> {
                         let msg = self.ctx.render_template(raw_msg, &data).unwrap();
                         println!("{}", msg);
                     };
-                    self.exec_templates(&job, &data);
+                    if let Some(templates) = &job.templates {
+                        self.exec_templates(&templates, &data);
+                    }
                     self.run_steps(&job, &mut data);
                 }
             }
@@ -380,18 +361,26 @@ impl<'a> Runner<'static> {
                 let start = from.unwrap_or(0);
                 let step = by.unwrap_or(1);
                 let mut counter = start;
-                while counter < *end {
+                while counter != *end {
                     data.iter = Some(serde_json::json!(counter));
                     if let Some(raw_msg) = &job.message {
                         let msg = self.ctx.render_template(raw_msg, &data).unwrap();
                         println!("{}", msg);
                     };
-                    self.exec_templates(&job, &data);
+                    if let Some(templates) = &job.templates {
+                        self.exec_templates(&templates, &data);
+                    }
                     self.run_steps(&job, &mut data);
                     counter += step;
                 }
             }
         }
+
+        // TODO: Refactor iterations into a single loop
+        // let iters: Vec<Value> = Vec::new();
+        // for i in iters {
+        // }
+
         let mut completed = job.completed.lock().unwrap();
         *completed = true;
         return true;

@@ -4,63 +4,20 @@ use anyhow::{Context, Result};
 use serde::de::DeserializeOwned;
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{BufRead, BufReader};
-
-use crate::config::{PropMap, StrMap};
-
-/// Read a dotenv file for environment variables
-///
-/// The dotenv file should be called ".env" but other names can be provided.
-/// Each line in the format is read as `KEY=VALUE`.
-pub fn read_dotenv<T: AsRef<str>>(env_path: T) -> Result<StrMap> {
-    let mut env = StrMap::new();
-
-    return match File::open(env_path.as_ref()) {
-        Ok(fp) => {
-            let reader = BufReader::new(fp);
-            for (line_id, line) in reader
-                .lines()
-                .filter(|l| l.as_ref().unwrap() != "")
-                .enumerate()
-            {
-                let line = line.unwrap();
-
-                line.split_once("=")
-                    .map(|(key, value)| env.insert(key.to_string(), value.to_string()))
-                    .with_context(|| {
-                        format!("Malformed line {} in dotenv => {line}", line_id + 1)
-                    })?;
-            }
-            Ok(env)
-        }
-        Err(e) => {
-            return Err(e)
-                .with_context(|| format!("Problem reading dotenv file at {}", env_path.as_ref()));
-        }
-    };
-}
-
-/// Convert a HashMap into a HashMap<String, String>
-#[macro_export]
-macro_rules! map_to_str {
-    ($e:expr) => {
-        $e.iter()
-            .map(|(k, v)| {
-                let deser: String = serde_yaml::to_string(v).unwrap_or_default();
-                (k.clone(), String::from(deser.trim_end().replace("'", "")))
-            })
-            .collect::<HashMap<String, String>>()
-    };
-}
+use std::io::BufReader;
 
 // Merge two hashmaps into a single hashmap
-pub fn merge_maps(first: &PropMap, second: &PropMap) -> StrMap {
-    let mut map: StrMap = HashMap::new();
-    let _ = &[first, second]
-        .to_vec()
-        .iter()
-        .map(|m| map.extend(map_to_str!(m)));
-    return map;
+pub fn merge_maps(
+    first: &HashMap<String, serde_json::Value>,
+    second: &HashMap<String, serde_json::Value>,
+) -> HashMap<String, String> {
+    let to_str = |v: &serde_json::Value| serde_json::to_string(v).unwrap_or_default();
+
+    first
+        .into_iter()
+        .chain(second)
+        .map(|(k, v)| (k.clone(), to_str(v)))
+        .collect::<HashMap<_, _>>()
 }
 
 /// Deserialize from a reader into an instance of type T

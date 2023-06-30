@@ -1,11 +1,11 @@
 //! Define the set of steps to run
 
+use crate::utils::deserialize_file;
 use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-
-use crate::config::{PropMap, StrMap};
-use crate::utils::deserialize_file;
 
 /// Iterations for the steps
 /// By default, the steps are executed once
@@ -15,22 +15,22 @@ pub enum Iteration {
     /// Path to a JSON file containing an array of values
     File(String),
 
-    /// Whether the job should be executed in a loop
-    /// True for an infinite loop and false for a single iteration
+    /// Whether the job should be executed in an infinite loop
+    /// or in a single iteration
+    // TODO: How to handle infinite loop in [`resolve_iters`]
     Loop(bool),
 
     /// Range of values.
     /// The range works like a for loop.
     /// By default starts at 0. If step is not specified, it defaults to 1
     Range {
-        from: Option<u64>,
-        to: u64,
-        by: Option<u64>,
+        from: Option<i64>,
+        to: i64,
+        by: Option<i64>,
     },
 
     /// List of values
-    /// TODO: Make it generic and don't depend on yaml
-    Values(Vec<serde_yaml::Value>),
+    Values(Vec<serde_json::Value>),
 }
 
 impl std::default::Default for Iteration {
@@ -67,7 +67,6 @@ pub enum LogOutput {
     ToStdout(bool),
 
     /// Template for an absolute path.
-    ///
     /// The path is recalculated every iteration.
     Filepath(String),
 }
@@ -79,7 +78,7 @@ impl std::default::Default for LogOutput {
 }
 
 /// Steps that a job can execute.
-/// A job can execute either a shell command or another job
+/// A job can execute shell commands or other jobs
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum Step {
@@ -92,8 +91,8 @@ pub enum Step {
     #[serde(rename(deserialize = "job"))]
     Job {
         job: String,
-        props: Option<PropMap>,
-        env: Option<StrMap>,
+        props: Option<HashMap<String, Value>>,
+        env: Option<HashMap<String, String>>,
     },
 }
 
@@ -101,9 +100,18 @@ pub enum Step {
 ///
 ///
 /// Templates are defined similar to docker, that is `/path/to/input:/path/to/output`.
-///
 /// Both input and output paths are treated as templates so we can extrapolate variables.
-/// `/path/to/input_{{iter}}:/path/to/output_{{iter}}`
+///
+/// ```
+/// /path/to/input_{{iter}}:/path/to/output_{{iter}}
+/// ```
+///
+/// This is important as the paths are read as absolute paths, even if the execution
+/// directory is provided. In that case, prepend the variable `{{dir}}` to the path:
+///
+/// ```
+/// {{dir}}/input:{{dir}}output
+/// ```
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct Job {
     /// Descriptive name of the Job
@@ -115,11 +123,11 @@ pub struct Job {
 
     /// Environment variables
     #[serde(default)]
-    pub env: StrMap,
+    pub env: HashMap<String, String>,
 
     /// Properties of the job
     #[serde(default)]
-    pub props: PropMap,
+    pub props: HashMap<String, Value>,
 
     /// Path to a file containing props
     pub props_file: Option<String>,
@@ -131,10 +139,10 @@ pub struct Job {
     #[serde(default)]
     pub iters: Iteration,
 
-    /// List of dependencies that will be run once
+    /// List of dependencies that will be run once before executing the steps
     pub depends: Option<Vec<Step>>,
 
-    /// Templates to execute.
+    /// Templates to execute
     pub templates: Option<Vec<String>>,
 
     /// Run the steps in parallel or sequentially
@@ -158,6 +166,7 @@ pub struct Job {
     pub completed: Arc<Mutex<bool>>,
 
     /// Message to print when executing a job
+    /// The message is printed to stdout at the beginning of every iterationg
     pub message: Option<String>,
 }
 
@@ -165,36 +174,58 @@ impl Job {
     /// Read props from the provided `props_file`
     /// If no `props_file` is provided, do nothing
     /// The file is deserialized with the [`deserialize_file`] function
-    pub fn read_props_file(&mut self) -> Result<bool> {
+    pub fn read_props_file(&mut self) -> Result<(), anyhow::Error> {
         if let Some(path) = &self.props_file {
-            match deserialize_file::<PropMap>(path) {
+            match deserialize_file::<HashMap<String, serde_json::Value>>(path) {
                 Ok(props) => {
                     self.props.extend(props);
-                    return Ok(true);
+                    return Ok(());
                 }
                 Err(e) => bail!(e),
             };
         };
-        Ok(true)
+        Ok(())
     }
 
-    /// Resolve a raw template path into a pair of paths
-    pub fn resolve_template(template: &str) -> Result<(&str, &str)> {
-        let paths: Vec<&str> = template.split(":").collect();
-        return match paths.len() {
+    /// Given a path template, provide input and output paths
+    /// If the template is illformed, return an error
+    pub fn resolve_template(template: &str) -> Result<(String, String)> {
+        let parts: Vec<&str> = template.split(":").filter(|p| *p != "").collect();
+        match parts.len() {
             1 => {
-                bail!("No path was provided. Use ':' to split the input and output path.")
+                bail!("Template must have both input and output path");
             }
             2 => {
-                if paths[0].is_empty() {
-                    bail!("Input path should not be empty.")
-                } else if paths[1].is_empty() {
-                    bail!("Output path should not be empty.")
-                } else {
-                    Ok((paths[0], paths[1]))
-                }
+                return Ok((parts[0].to_string(), parts[1].to_string()));
             }
-            _ => bail!("More than 2 paths detected."),
-        };
+            _ => {
+                bail!("Template should only have input and output path");
+            }
+        }
+    }
+
+    pub fn resolve_iters(&self) -> Vec<serde_json::Value> {
+        match &self.iters {
+            Iteration::Values(vals) => {
+                return vals
+                    .iter()
+                    .map(|i| serde_json::to_value(i).unwrap())
+                    .collect::<Vec<serde_json::Value>>();
+            }
+            Iteration::Range { from, to: end, by } => {
+                let mut res: Vec<serde_json::Value> = Vec::new();
+                let start = from.unwrap_or(0);
+                let step = by.unwrap_or(1);
+                let mut counter = start;
+                while counter < *end {
+                    counter += step;
+                    res.push(serde_json::to_value(counter).unwrap())
+                }
+                return res;
+            }
+            Iteration::File(file) => Vec::new(),
+            Iteration::Loop(is_loop) => Vec::new(),
+            _ => Vec::new(),
+        }
     }
 }
