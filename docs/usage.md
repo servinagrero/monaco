@@ -21,14 +21,14 @@ jobs:
     steps:
       - echo "Hello from another"
 
-# Would result in the output
+# Results in the output
 # hello world
 # Hello from another
 ```
 
 We can also executed other jobs instead of shell commands by provididing the job name as map. Moreover, we can temporarely update the props and environment of the job if the `props` and `env` keys are also supplied.
 
-```yaml title="Job calling another job"
+```yaml title="Calling another job"
 jobs:
   - name: First
     steps: 
@@ -37,13 +37,13 @@ jobs:
     steps:
       - echo "Hello from Second"
 
-# Would result in the output
+# Results in the output
 # Hello from Second
 ```
 
 Note that when a job has executed all of its commands, it gets marked as completed and it won't be executed again, even after successive calls, as depicted here.
 
-```yaml title="Job calling another job"
+```yaml title="Calling another job"
 jobs:
   - name: First
     steps: 
@@ -53,7 +53,7 @@ jobs:
     steps:
       - echo "Hello from Second"
 
-# Would result in the output
+# Results in the output
 # Hello from Second
 ```
 
@@ -80,7 +80,7 @@ jobs:
     steps:
       - echo "Infinite loop"
 
-# Would result in the output
+# Results in the output
 # Infinite loop
 # Infinite loop
 # ...
@@ -95,7 +95,7 @@ jobs:
     steps:
       - echo "We are on iteration {{iter}}"
 
-# Would result in the output
+# Results in the output
 # We are on iteration 1
 # We are on iteration 3
 # We are on iteration 5
@@ -104,17 +104,19 @@ jobs:
 
 ### Range of values
 
+The range of values is calculated as [from, to). The start value is included by the end value is excluded. The step needs to be strictly larger than 0.
+
 ```yaml title="Example of range iteration"
 jobs:
   Test:
     iters:
       # from: 0 If from is not specified it defaults to 0
-      end: 5
+      to: 5
       # by: 1 The step defaults to 1
     steps:
       - echo "We are on iteration {{iter}}"
 
-# Would result in the output
+# Results in the output
 # We are on iteration 0
 # We are on iteration 1
 # We are on iteration 2
@@ -135,9 +137,30 @@ jobs:
       steps:
         - echo "Letter {{iter.letter}} and index {{iter.idx}}"
 
-# Would result in the output
+# Results in the output
 # Letter A and index 1
 # Letter B and index 2
+```
+
+## Iteration message
+
+To keep track of the iteration that is being executed, a small informative message can be provided on a job basis using the `message` key. The text is treated as a template that is executed at the beginning of every iteration.
+
+```yaml title="Iteration message"
+jobs:
+  - name: Test
+    message: "Running iteration {{iter}}"
+    iter: [0, 1, 2]
+    steps:
+      - echo "doing things..."
+      
+# Results in the output
+# Running iteration 0
+# doing things...
+# Running iteration 1
+# doing things...
+# Running iteration 2
+# doing things...
 ```
 
 ## Variable interpolation
@@ -157,7 +180,7 @@ jobs:
     steps:
       - echo "the answer is $ANSWER"
 
-# Would result in the output
+# Results in the output
 # The answer is 42
 ```
 
@@ -177,7 +200,7 @@ jobs:
     steps:
       - echo "but here is $foo"
 
-# Would result in the output
+# Results in the output
 # Here foo is bar
 # but here is 42
 ```
@@ -196,7 +219,7 @@ jobs:
     steps:
       - echo "The password is $PASS"
 
-# Would result in the output
+# Results in the output
 # The password is 1234
 ```
 
@@ -216,7 +239,7 @@ jobs:
     steps:
       - echo "but here is $foo"
 
-# Would result in the output
+# Results in the output
 # Here foo is bar
 # but here is 42
 ```
@@ -270,7 +293,7 @@ jobs:
     steps:
       - echo "This will be the second command"
 
-# Would result in the output
+# Results in the output
 # This will be the first command
 # This will be the second command
 # And at last, this job
@@ -289,7 +312,7 @@ jobs:
       - echo "The same as {{dir}}"
       - echo "The config is on {{config_dir}}"
 
-# Would result in the output
+# Results in the output
 # We are in /tmp
 # The same as /tmp
 # The config is on /path/to/config_dir
@@ -307,7 +330,7 @@ jobs:
       - false
       - echo "But you won't see this"
 
-# Would result in the output
+# Results in the output
 # You will see this
 ```
 
@@ -320,7 +343,7 @@ jobs:
       - false
       - echo "And this too"
 
-# Would result in the output
+# Results in the output
 # You will see this
 # And this too
 ```
@@ -340,7 +363,7 @@ jobs:
     steps:
       - echo "This is executed only once"
 
-# Would result in the output
+# Results in the output
 # This is executed only once
 ```
 
@@ -361,7 +384,7 @@ jobs:
     when:
       - true
 
-# Would result in the output
+# Results in the output
 # over and over
 # over and over
 # over and over
