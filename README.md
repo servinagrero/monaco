@@ -16,6 +16,25 @@ This project has been heavily influenced by [Task](https://taskfile.dev/) and [G
 
 Please refer to the online [documentation](https://servinagrero.github.io/monaco).
 
+## Citation
+
+If you use this software, please consider citing the software through the following publication.
+
+> S. V. Gutiérrez, P. Inglese, G. Di Natale and E. -I. Vatajelu, "Open Automation Framework for Complex Parametric Electrical Simulations," 2023 26th International Symposium on Design and Diagnostics of Electronic Circuits and Systems (DDECS), Tallinn, Estonia, 2023, pp. 132-135, doi: 10.1109/DDECS57882.2023.10139409.
+
+```bibtex title="Bibtex Source"
+@INPROCEEDINGS{10139409,
+  author={Gutiérrez, Sergio Vinagrero and Inglese, Pietro and Di Natale, Giorgio and Vatajelu, Elena-Ioana},
+  booktitle={2023 26th International Symposium on Design and Diagnostics of Electronic Circuits and Systems (DDECS)}, 
+  title={Open Automation Framework for Complex Parametric Electrical Simulations}, 
+  year={2023},
+  volume={},
+  number={},
+  pages={132-135},
+  doi={10.1109/DDECS57882.2023.10139409}
+  }
+```
+
 ## License
 
 MIT License
